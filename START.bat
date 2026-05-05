@@ -227,10 +227,12 @@ echo   !CYAN!4)!RESET! !BOLD!Gemini!RESET!       !DIM!- Google AI API!RESET!
 echo   !CYAN!5)!RESET! !BOLD!Claude!RESET!       !DIM!- Anthropic API!RESET!
 echo   !CYAN!6)!RESET! !BOLD!OpenAI!RESET!       !DIM!- GPT / Codex API!RESET!
 echo   !CYAN!7)!RESET! !BOLD!Ollama!RESET!       !DIM!- Local Offline AI (No internet)!RESET!
+echo   !CYAN!8)!RESET! !BOLD!LM Studio!RESET!    !DIM!- Local OpenAI-compatible server!RESET!
+echo   !CYAN!9)!RESET! !BOLD!Custom API!RESET!    !DIM!- Any OpenAI-compatible provider!RESET!
 echo.
 :prompt_provider
 set "PROVIDER_SEL="
-set /p "PROVIDER_SEL=  Select your provider !CYAN!(1-7)!RESET!: "
+set /p "PROVIDER_SEL=  Select your provider !CYAN!(1-9)!RESET!: "
 
 if "!PROVIDER_SEL!"=="1" goto setup_openrouter
 if "!PROVIDER_SEL!"=="2" goto setup_nvidia
@@ -239,7 +241,9 @@ if "!PROVIDER_SEL!"=="4" goto setup_gemini
 if "!PROVIDER_SEL!"=="5" goto setup_claude
 if "!PROVIDER_SEL!"=="6" goto setup_openai
 if "!PROVIDER_SEL!"=="7" goto setup_ollama
-echo   !RED![ERROR] Invalid selection. Please choose 1-7.!RESET!
+if "!PROVIDER_SEL!"=="8" goto setup_lmstudio
+if "!PROVIDER_SEL!"=="9" goto setup_custom_openai
+echo   !RED![ERROR] Invalid selection. Please choose 1-9.!RESET!
 goto prompt_provider
 
 :: ---------------------------------------------------------
@@ -628,6 +632,125 @@ if "%USER_MODEL%"=="" set "USER_MODEL=llama3.2:3b"
 goto finish_setup
 
 :: ---------------------------------------------------------
+::   LM STUDIO SETUP
+:: ---------------------------------------------------------
+:setup_lmstudio
+echo.
+echo   !CYAN!--- LM STUDIO LOCAL SETUP ---!RESET!
+echo.
+echo   Start LM Studio first, load a model, then open !BOLD!Developer ^> Local Server!RESET!.
+echo   Turn the server on and keep the default OpenAI-compatible URL:
+echo   !GREEN!http://localhost:1234/v1!RESET!
+echo.
+set "USER_API_KEY=lm-studio"
+set /p "LM_BASE_URL=  Base URL [http://localhost:1234/v1]: "
+if "!LM_BASE_URL!"=="" set "LM_BASE_URL=http://localhost:1234/v1"
+if "!LM_BASE_URL:~-1!"=="/" set "LM_BASE_URL=!LM_BASE_URL:~0,-1!"
+echo.
+echo   !YELLOW![~] Checking LM Studio server...!RESET!
+powershell -NoProfile -Command "try { Invoke-RestMethod -Uri '!LM_BASE_URL!/models' -Headers @{ 'Authorization' = 'Bearer lm-studio' } -ErrorAction Stop | Out-Null; exit 0 } catch { exit 1 }"
+if errorlevel 1 (
+    echo   !YELLOW![WARN] Could not reach LM Studio at !LM_BASE_URL!/models.!RESET!
+    echo   Make sure LM Studio is open, a model is loaded, and the local server is running.
+    set /p "SAVE_ANYWAY=  Continue with manual model entry? (y/N): "
+    if /I not "!SAVE_ANYWAY!"=="Y" goto setup_lmstudio
+)
+echo.
+echo   !CYAN!--- LM STUDIO MODELS ---!RESET! !DIM!(Loaded models from /v1/models)!RESET!
+set "idx=1"
+for /f "delims=" %%I in ('powershell -NoProfile -Command "try { $d = (Invoke-RestMethod -Uri '!LM_BASE_URL!/models' -Headers @{ 'Authorization' = 'Bearer lm-studio' }).data; $d | Select-Object -ExpandProperty id } catch { }"') do (
+    set "LM_MODEL_!idx!=%%I"
+    echo   !CYAN!!idx!^)!RESET! %%I
+    set /a "idx+=1"
+)
+set "MAX_IDX=!idx!"
+echo   !CYAN!!MAX_IDX!^)!RESET! !DIM!Manual model name...!RESET!
+echo.
+:prompt_lmstudio_sel
+set "MODEL_SEL="
+set /p "MODEL_SEL=  Choose a model !CYAN!(1-!MAX_IDX!)!RESET! [Enter for 1]: "
+if not defined MODEL_SEL set "MODEL_SEL=1"
+if "!MODEL_SEL!"=="" set "MODEL_SEL=1"
+if "!MODEL_SEL!"=="!MAX_IDX!" (
+    set /p "USER_MODEL=  Enter model identifier shown in LM Studio: "
+) else (
+    for %%V in (!MODEL_SEL!) do set "USER_MODEL=!LM_MODEL_%%V!"
+)
+if "!USER_MODEL!"=="" (
+    echo   !RED![ERROR] Model cannot be empty.!RESET!
+    goto prompt_lmstudio_sel
+)
+(
+    echo AI_PROVIDER=openai
+    echo CLAUDE_CODE_USE_OPENAI=1
+    echo OPENAI_API_KEY=%USER_API_KEY%
+    echo OPENAI_BASE_URL=%LM_BASE_URL%
+    echo OPENAI_MODEL=%USER_MODEL%
+    echo AI_DISPLAY_MODEL=%USER_MODEL%
+) > "%ENV_FILE%"
+goto finish_setup
+
+:: ---------------------------------------------------------
+::   CUSTOM OPENAI-COMPATIBLE SETUP
+:: ---------------------------------------------------------
+:setup_custom_openai
+echo.
+echo   !CYAN!--- CUSTOM OPENAI-COMPATIBLE SETUP ---!RESET!
+echo.
+echo   Use this for providers that expose OpenAI-style endpoints like /v1/models and /v1/chat/completions.
+set /p "CUSTOM_BASE_URL=  Base URL (example: https://provider.example.com/v1): "
+if "!CUSTOM_BASE_URL!"=="" (
+    echo   !RED![ERROR] Base URL cannot be empty!!RESET!
+    goto setup_custom_openai
+)
+if "!CUSTOM_BASE_URL:~-1!"=="/" set "CUSTOM_BASE_URL=!CUSTOM_BASE_URL:~0,-1!"
+set /p "USER_API_KEY=  API Key (Enter for none/local): "
+if "!USER_API_KEY!"=="" set "USER_API_KEY=not-needed"
+set "USER_API_KEY=!USER_API_KEY: =!"
+echo.
+echo   !YELLOW![~] Checking /models endpoint...!RESET!
+powershell -NoProfile -Command "$headers = @{ 'Authorization' = 'Bearer !USER_API_KEY!' }; try { Invoke-RestMethod -Uri '!CUSTOM_BASE_URL!/models' -Headers $headers -ErrorAction Stop | Out-Null; exit 0 } catch { exit 1 }"
+if errorlevel 1 (
+    echo   !YELLOW![WARN] Could not verify !CUSTOM_BASE_URL!/models.!RESET!
+    set /p "SAVE_ANYWAY=  Continue with manual model entry? (y/N): "
+    if /I not "!SAVE_ANYWAY!"=="Y" goto setup_custom_openai
+)
+echo.
+echo   !CYAN!--- CUSTOM MODELS ---!RESET! !DIM!(Live Fetching...)!RESET!
+set "idx=1"
+for /f "delims=" %%I in ('powershell -NoProfile -Command "$headers = @{ 'Authorization' = 'Bearer !USER_API_KEY!' }; try { $d = (Invoke-RestMethod -Uri '!CUSTOM_BASE_URL!/models' -Headers $headers).data; $d | Select-Object -ExpandProperty id } catch { }"') do (
+    set "CUSTOM_MODEL_!idx!=%%I"
+    echo   !CYAN!!idx!^)!RESET! %%I
+    set /a "idx+=1"
+)
+set "MAX_IDX=!idx!"
+echo   !CYAN!!MAX_IDX!^)!RESET! !DIM!Manual model name...!RESET!
+echo.
+:prompt_custom_openai_sel
+set "MODEL_SEL="
+set /p "MODEL_SEL=  Choose a model !CYAN!(1-!MAX_IDX!)!RESET! [Enter for manual]: "
+if not defined MODEL_SEL set "MODEL_SEL=!MAX_IDX!"
+if "!MODEL_SEL!"=="" set "MODEL_SEL=!MAX_IDX!"
+if "!MODEL_SEL!"=="!MAX_IDX!" (
+    set /p "USER_MODEL=  Enter model string: "
+) else (
+    for %%V in (!MODEL_SEL!) do set "USER_MODEL=!CUSTOM_MODEL_%%V!"
+)
+if "!USER_MODEL!"=="" (
+    echo   !RED![ERROR] Model cannot be empty.!RESET!
+    goto prompt_custom_openai_sel
+)
+(
+    echo AI_PROVIDER=openai
+    echo CLAUDE_CODE_USE_OPENAI=1
+    echo OPENAI_API_KEY=%USER_API_KEY%
+    echo OPENAI_BASE_URL=%CUSTOM_BASE_URL%
+    echo OPENAI_MODEL=%USER_MODEL%
+    echo AI_DISPLAY_MODEL=%USER_MODEL%
+) > "%ENV_FILE%"
+goto finish_setup
+
+:: ---------------------------------------------------------
 ::   OPENAI SETUP
 :: ---------------------------------------------------------
 :setup_openai
@@ -690,6 +813,8 @@ if "!AI_PROVIDER!"=="openai" (
         echo !OPENAI_BASE_URL! | findstr /C:"api.deepseek.com" >nul && set "PROVIDER_NAME=DeepSeek"
         echo !OPENAI_BASE_URL! | findstr /C:"api.openai.com" >nul && set "PROVIDER_NAME=OpenAI"
         echo !OPENAI_BASE_URL! | findstr /C:"localhost:11434" >nul && set "PROVIDER_NAME=Ollama"
+        echo !OPENAI_BASE_URL! | findstr /C:"localhost:1234" >nul && set "PROVIDER_NAME=LM Studio"
+        if "!PROVIDER_NAME!"=="openai" set "PROVIDER_NAME=Custom OpenAI-Compatible"
     )
 )
 if "!AI_PROVIDER!"=="gemini" set "PROVIDER_NAME=Google Gemini"

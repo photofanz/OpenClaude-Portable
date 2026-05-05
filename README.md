@@ -25,7 +25,7 @@ Everything runs strictly inside the project folder. No files are written to the 
 
 | Feature | Details |
 |---|---|
-| **7 AI Providers** | NVIDIA NIM · DeepSeek · OpenRouter · Google Gemini · Anthropic Claude · OpenAI · Ollama (offline) |
+| **9 AI Providers** | NVIDIA NIM · DeepSeek · OpenRouter · Google Gemini · Anthropic Claude · OpenAI · Ollama (offline) · LM Studio · Custom OpenAI-compatible API |
 | **Zero Footprint** | All data, keys, and logs stay inside `data/` — nothing touches the host system |
 | **Local Speed Proxy** | Trims system prompts by up to 90% before sending to Ollama, dramatically improving response time on CPU-only hardware |
 | **Auto-Update Cache** | Checks for engine updates once per day (skips the network call on repeat launches) |
@@ -119,6 +119,32 @@ The menu auto-selects **Normal Mode** after 10 seconds if no key is pressed.
 | **Anthropic Claude** | Paid | [console.anthropic.com](https://console.anthropic.com) |
 | **OpenAI** | Paid | [platform.openai.com](https://platform.openai.com) |
 | **Ollama** | Free, fully offline | [ollama.com](https://ollama.com) |
+| **LM Studio** | Free, local server | [lmstudio.ai](https://lmstudio.ai) |
+| **Custom OpenAI-compatible API** | Depends on provider | Provider base URL + optional API key |
+
+---
+
+## LM Studio Setup
+
+LM Studio works through its OpenAI-compatible local server. In LM Studio:
+
+1. Download or select a model.
+2. Load the model.
+3. Open **Developer > Local Server**.
+4. Start the server.
+5. Keep the default base URL unless you changed it: `http://localhost:1234/v1`.
+
+Then select **LM Studio** in `START.bat`, `start.sh`, or the dashboard setup wizard. The setup will check `GET /v1/models` and list the loaded model identifiers. If the check fails, confirm the LM Studio server is running and a model is loaded.
+
+## Custom OpenAI-Compatible Provider
+
+Use **Custom API** for any provider that exposes OpenAI-style endpoints. The setup asks for:
+
+- Base URL, usually ending in `/v1`
+- API key, or blank for local providers that do not require one
+- Model name, fetched from `/models` when available or entered manually
+
+The saved config uses `AI_PROVIDER=openai`, `CLAUDE_CODE_USE_OPENAI=1`, `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL`.
 
 ---
 

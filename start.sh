@@ -188,10 +188,12 @@ setup_provider() {
     echo -e "  ${CYAN}5)${RESET} ${BOLD}Claude${RESET}       ${DIM}- Anthropic API${RESET}"
     echo -e "  ${CYAN}6)${RESET} ${BOLD}OpenAI${RESET}       ${DIM}- GPT / Codex API${RESET}"
     echo -e "  ${CYAN}7)${RESET} ${BOLD}Ollama${RESET}       ${DIM}- Local Offline AI (No internet)${RESET}"
+    echo -e "  ${CYAN}8)${RESET} ${BOLD}LM Studio${RESET}    ${DIM}- Local OpenAI-compatible server${RESET}"
+    echo -e "  ${CYAN}9)${RESET} ${BOLD}Custom API${RESET}    ${DIM}- Any OpenAI-compatible provider${RESET}"
     echo ""
 
     while true; do
-        read -p "  Select your provider (1-7): " PROVIDER_SEL
+        read -p "  Select your provider (1-9): " PROVIDER_SEL
         case "$PROVIDER_SEL" in
             1) setup_openrouter; return ;;
             2) setup_nvidia; return ;;
@@ -200,7 +202,9 @@ setup_provider() {
             5) setup_claude; return ;;
             6) setup_openai; return ;;
             7) setup_ollama; return ;;
-            *) echo -e "  ${RED}[ERROR] Invalid selection. Please choose 1-7.${RESET}" ;;
+            8) setup_lmstudio; return ;;
+            9) setup_custom_openai; return ;;
+            *) echo -e "  ${RED}[ERROR] Invalid selection. Please choose 1-9.${RESET}" ;;
         esac
     done
 }
@@ -215,6 +219,8 @@ verify_key() {
         nvidia)     curl -sf -H "Authorization: Bearer $key" https://integrate.api.nvidia.com/v1/models > /dev/null 2>&1 ;;
         deepseek)   curl -sf -H "Authorization: Bearer $key" https://api.deepseek.com/models > /dev/null 2>&1 ;;
         openai)     curl -sf -H "Authorization: Bearer $key" https://api.openai.com/v1/models > /dev/null 2>&1 ;;
+        lmstudio)   curl -sf -H "Authorization: Bearer lm-studio" "${key%/}/models" > /dev/null 2>&1 ;;
+        custom)     return 0 ;;
     esac
 }
 
@@ -410,6 +416,103 @@ OPENAI_MODEL=${USER_MODEL}
 AI_DISPLAY_MODEL=${USER_MODEL}"
 }
 
+setup_lmstudio() {
+    echo ""
+    echo -e "  ${CYAN}--- LM STUDIO LOCAL SETUP ---${RESET}"
+    echo ""
+    echo "  Start LM Studio first, load a model, then open Developer > Local Server."
+    echo "  Turn the server on and keep the default OpenAI-compatible URL:"
+    echo -e "  ${GREEN}http://localhost:1234/v1${RESET}"
+    echo ""
+    read -p "  Base URL [http://localhost:1234/v1]: " LM_BASE_URL
+    [ -z "$LM_BASE_URL" ] && LM_BASE_URL="http://localhost:1234/v1"
+    LM_BASE_URL="${LM_BASE_URL%/}"
+    USER_API_KEY="lm-studio"
+
+    if ! verify_key lmstudio "$LM_BASE_URL"; then
+        echo -e "  ${YELLOW}[WARN] Could not reach LM Studio at ${LM_BASE_URL}/models.${RESET}"
+        echo "  Make sure LM Studio is open, a model is loaded, and the local server is running."
+        read -p "  Continue with manual model entry? (y/N): " SAVE_ANYWAY
+        [[ ! "$SAVE_ANYWAY" =~ ^[Yy]$ ]] && setup_lmstudio && return
+    fi
+
+    echo ""
+    echo -e "  ${CYAN}--- LM STUDIO MODELS ---${RESET} ${DIM}(Loaded models from /v1/models)${RESET}"
+    MODELS=$(curl -sf -H "Authorization: Bearer lm-studio" "${LM_BASE_URL}/models" 2>/dev/null | grep -Eo '"id"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -e 's/"id"[[:space:]]*:[[:space:]]*"//g' -e 's/"//g')
+    idx=1
+    while IFS= read -r model; do
+        [ -z "$model" ] && continue
+        echo -e "  ${CYAN}${idx})${RESET} $model"
+        eval "MODEL_${idx}='$model'"
+        idx=$((idx+1))
+    done <<< "$MODELS"
+    echo -e "  ${CYAN}${idx})${RESET} ${DIM}Manual model name...${RESET}"
+    echo ""
+    read -p "  Choose a model (1-$idx) [Enter for 1]: " MODEL_SEL
+    [ -z "$MODEL_SEL" ] && MODEL_SEL=1
+    if [ "$MODEL_SEL" = "$idx" ]; then
+        read -p "  Enter model identifier shown in LM Studio: " USER_MODEL
+    else
+        eval "USER_MODEL=\$MODEL_${MODEL_SEL}"
+    fi
+    [ -z "$USER_MODEL" ] && read -p "  Enter model identifier shown in LM Studio: " USER_MODEL
+
+    save_env "AI_PROVIDER=openai
+CLAUDE_CODE_USE_OPENAI=1
+OPENAI_API_KEY=${USER_API_KEY}
+OPENAI_BASE_URL=${LM_BASE_URL}
+OPENAI_MODEL=${USER_MODEL}
+AI_DISPLAY_MODEL=${USER_MODEL}"
+}
+
+setup_custom_openai() {
+    echo ""
+    echo -e "  ${CYAN}--- CUSTOM OPENAI-COMPATIBLE SETUP ---${RESET}"
+    echo ""
+    echo "  Use this for providers that expose OpenAI-style endpoints like /v1/models and /v1/chat/completions."
+    read -p "  Base URL (example: https://provider.example.com/v1): " CUSTOM_BASE_URL
+    [ -z "$CUSTOM_BASE_URL" ] && echo -e "  ${RED}[ERROR] Base URL cannot be empty!${RESET}" && setup_custom_openai && return
+    CUSTOM_BASE_URL="${CUSTOM_BASE_URL%/}"
+    read -p "  API Key (Enter for none/local): " USER_API_KEY
+    [ -z "$USER_API_KEY" ] && USER_API_KEY="not-needed"
+    USER_API_KEY=$(echo "$USER_API_KEY" | tr -d ' ' | tr -d '\r')
+
+    echo -e "  ${YELLOW}[~] Checking /models endpoint...${RESET}"
+    if ! curl -sf -H "Authorization: Bearer $USER_API_KEY" "${CUSTOM_BASE_URL}/models" > /dev/null 2>&1; then
+        echo -e "  ${YELLOW}[WARN] Could not verify ${CUSTOM_BASE_URL}/models.${RESET}"
+        read -p "  Continue with manual model entry? (y/N): " SAVE_ANYWAY
+        [[ ! "$SAVE_ANYWAY" =~ ^[Yy]$ ]] && setup_custom_openai && return
+    fi
+
+    echo ""
+    echo -e "  ${CYAN}--- CUSTOM MODELS ---${RESET} ${DIM}(Live Fetching...)${RESET}"
+    MODELS=$(curl -sf -H "Authorization: Bearer $USER_API_KEY" "${CUSTOM_BASE_URL}/models" 2>/dev/null | grep -Eo '"id"[[:space:]]*:[[:space:]]*"[^"]*"' | sed -e 's/"id"[[:space:]]*:[[:space:]]*"//g' -e 's/"//g')
+    idx=1
+    while IFS= read -r model; do
+        [ -z "$model" ] && continue
+        echo -e "  ${CYAN}${idx})${RESET} $model"
+        eval "MODEL_${idx}='$model'"
+        idx=$((idx+1))
+    done <<< "$MODELS"
+    echo -e "  ${CYAN}${idx})${RESET} ${DIM}Manual model name...${RESET}"
+    echo ""
+    read -p "  Choose a model (1-$idx) [Enter for manual]: " MODEL_SEL
+    [ -z "$MODEL_SEL" ] && MODEL_SEL="$idx"
+    if [ "$MODEL_SEL" = "$idx" ]; then
+        read -p "  Enter model string: " USER_MODEL
+    else
+        eval "USER_MODEL=\$MODEL_${MODEL_SEL}"
+    fi
+    [ -z "$USER_MODEL" ] && echo -e "  ${RED}[ERROR] Model cannot be empty!${RESET}" && setup_custom_openai && return
+
+    save_env "AI_PROVIDER=openai
+CLAUDE_CODE_USE_OPENAI=1
+OPENAI_API_KEY=${USER_API_KEY}
+OPENAI_BASE_URL=${CUSTOM_BASE_URL}
+OPENAI_MODEL=${USER_MODEL}
+AI_DISPLAY_MODEL=${USER_MODEL}"
+}
+
 setup_deepseek() {
     echo ""
     echo -e "  ${CYAN}--- DEEPSEEK SETUP ---${RESET}"
@@ -564,6 +667,8 @@ case "$AI_PROVIDER" in
         elif [[ "$OPENAI_BASE_URL" == *"api.deepseek.com"* ]]; then PROVIDER_NAME="DeepSeek"
         elif [[ "$OPENAI_BASE_URL" == *"api.openai.com"* ]]; then PROVIDER_NAME="OpenAI"
         elif [[ "$OPENAI_BASE_URL" == *"localhost:11434"* ]]; then PROVIDER_NAME="Ollama"
+        elif [[ "$OPENAI_BASE_URL" == *"localhost:1234"* ]]; then PROVIDER_NAME="LM Studio"
+        else PROVIDER_NAME="Custom OpenAI-Compatible"
         fi ;;
     gemini)     PROVIDER_NAME="Google Gemini" ;;
     anthropic)  PROVIDER_NAME="Anthropic Claude" ;;
