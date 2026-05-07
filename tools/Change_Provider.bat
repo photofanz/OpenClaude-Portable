@@ -305,6 +305,7 @@ goto save_and_exit
         echo CLAUDE_CODE_USE_OPENAI=!CLAUDE_CODE_USE_OPENAI!
         echo OPENAI_API_KEY=!OPENAI_API_KEY!
         echo OPENAI_BASE_URL=!OPENAI_BASE_URL!
+        echo OPENAI_API_FORMAT=chat_completions
         echo OPENAI_MODEL=!OPENAI_MODEL!
     )
     if "!AI_PROVIDER!"=="gemini" (
@@ -320,6 +321,7 @@ goto save_and_exit
         echo CLAUDE_CODE_USE_OPENAI=!CLAUDE_CODE_USE_OPENAI!
         echo OPENAI_API_KEY=!OPENAI_API_KEY!
         echo OPENAI_BASE_URL=!OPENAI_BASE_URL!
+        echo OPENAI_API_FORMAT=chat_completions
         echo OPENAI_MODEL=!OPENAI_MODEL!
     )
 ) > "%ENV_FILE%"

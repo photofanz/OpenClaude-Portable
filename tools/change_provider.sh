@@ -70,6 +70,7 @@ EOF
             echo "CLAUDE_CODE_USE_OPENAI=$CLAUDE_CODE_USE_OPENAI" >> "$ENV_FILE"
             echo "OPENAI_API_KEY=$OPENAI_API_KEY" >> "$ENV_FILE"
             echo "OPENAI_BASE_URL=$OPENAI_BASE_URL" >> "$ENV_FILE"
+            echo "OPENAI_API_FORMAT=chat_completions" >> "$ENV_FILE"
             echo "OPENAI_MODEL=$OPENAI_MODEL" >> "$ENV_FILE"
             if [ "$AI_PROVIDER" = "nvidia" ] || [[ "$OPENAI_BASE_URL" == *"nvidia"* ]]; then
                 echo "CLAUDE_CODE_AGENT_LIST_IN_MESSAGES=false" >> "$ENV_FILE"
@@ -89,6 +90,7 @@ EOF
             echo "CLAUDE_CODE_USE_OPENAI=$CLAUDE_CODE_USE_OPENAI" >> "$ENV_FILE"
             echo "OPENAI_API_KEY=$OPENAI_API_KEY" >> "$ENV_FILE"
             echo "OPENAI_BASE_URL=$OPENAI_BASE_URL" >> "$ENV_FILE"
+            echo "OPENAI_API_FORMAT=chat_completions" >> "$ENV_FILE"
             echo "OPENAI_MODEL=$OPENAI_MODEL" >> "$ENV_FILE"
             ;;
     esac

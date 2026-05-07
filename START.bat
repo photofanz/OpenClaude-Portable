@@ -17,9 +17,15 @@ set "USB_ROOT=%~dp0"
 set "ENGINE_DIR=%USB_ROOT%engine"
 set "DATA_DIR=%USB_ROOT%data"
 set "ENV_FILE=%DATA_DIR%\ai_settings.env"
+set "NPM_CACHE_DIR=%DATA_DIR%\npm-cache"
+set "NPM_INSTALL_LOG=%ENGINE_DIR%\openclaude-engine-install.log"
 set "NODE_VERSION=22.14.0"
 set "NODE_DIR_NAME=node-win-x64"
 set "NODE_DIR=%ENGINE_DIR%\%NODE_DIR_NAME%"
+set "NODE_ARCHIVE=%ENGINE_DIR%\node.zip"
+set "NODE_DOWNLOAD_LOG=%ENGINE_DIR%\node-download.log"
+set "NODE_PRIMARY_URL=https://nodejs.org/dist/v%NODE_VERSION%/node-v%NODE_VERSION%-win-x64.zip"
+set "NODE_FALLBACK_URL=https://r2.nodejs.org/dist/v%NODE_VERSION%/node-v%NODE_VERSION%-win-x64.zip"
 set "GIT_VERSION=2.54.0"
 set "GIT_DIR_NAME=git-win-x64"
 set "GIT_DIR=%ENGINE_DIR%\%GIT_DIR_NAME%"
@@ -31,12 +37,22 @@ set "OC_CLI=%OPENCLAUDE_DIR%\dist\cli.mjs"
 
 :: 1. Force the portable AI to save logs/memory strictly to the USB
 set "CLAUDE_CONFIG_DIR=%DATA_DIR%\openclaude"
+set "PORTABLE_HOME=%DATA_DIR%\home"
 set "XDG_CONFIG_HOME=%DATA_DIR%\config"
 set "XDG_DATA_HOME=%DATA_DIR%\app_data"
+set "XDG_CACHE_HOME=%DATA_DIR%\cache"
+set "APPDATA=%DATA_DIR%\app_data"
+set "LOCALAPPDATA=%DATA_DIR%\local_app_data"
+set "HOME=%PORTABLE_HOME%"
+set "USERPROFILE=%PORTABLE_HOME%"
 
 if not exist "%CLAUDE_CONFIG_DIR%" mkdir "%CLAUDE_CONFIG_DIR%"
+if not exist "%PORTABLE_HOME%" mkdir "%PORTABLE_HOME%"
 if not exist "%XDG_CONFIG_HOME%" mkdir "%XDG_CONFIG_HOME%"
 if not exist "%XDG_DATA_HOME%" mkdir "%XDG_DATA_HOME%"
+if not exist "%XDG_CACHE_HOME%" mkdir "%XDG_CACHE_HOME%"
+if not exist "%APPDATA%" mkdir "%APPDATA%"
+if not exist "%LOCALAPPDATA%" mkdir "%LOCALAPPDATA%"
 
 :: Display Banner
 echo.
@@ -59,12 +75,15 @@ set "INSTALL_ACTION=%~1"
 if "%INSTALL_ACTION%"=="" set "INSTALL_ACTION=Installing"
 echo   !YELLOW![~] !INSTALL_ACTION! OpenClaude Engine...!RESET!
 echo   !DIM!    This can take several minutes on slower USB drives or networks.!RESET!
-pushd "%ENGINE_DIR%"
-call npm.cmd install @gitlawb/openclaude@latest --no-audit --no-fund --loglevel=warn --no-bin-links
+echo   !DIM!    Log: %NPM_INSTALL_LOG%!RESET!
+echo   !DIM!    Tip: USB 2.0 drives can look idle while npm writes many small files.!RESET!
+if not exist "%NPM_CACHE_DIR%" mkdir "%NPM_CACHE_DIR%"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%USB_ROOT%tools\install-openclaude-engine.ps1" -EngineDir "%ENGINE_DIR%" -NpmCmd "%NODE_DIR%\npm.cmd" -CacheDir "%NPM_CACHE_DIR%" -LogFile "%NPM_INSTALL_LOG%"
 set "NPM_STATUS=!ERRORLEVEL!"
-popd
 if not "!NPM_STATUS!"=="0" (
     echo   !RED![ERROR] OpenClaude Engine install failed ^(npm exit !NPM_STATUS!^).!RESET!
+    echo   !DIM!        Check log: %NPM_INSTALL_LOG%!RESET!
+    echo   !DIM!        If this only fails on USB, try a USB 3.x port/drive or copy the folder to internal storage for the first install, then copy it back.!RESET!
     pause
     exit /b 1
 )
@@ -83,24 +102,28 @@ exit /b 1
 :: 2. Check Node.js
 if not exist "%NODE_DIR%\node.exe" (
     echo   !YELLOW![~] Node.js not found for Windows-x64. Downloading...!RESET!
-    curl.exe -L "https://nodejs.org/dist/v%NODE_VERSION%/node-v%NODE_VERSION%-win-x64.zip" -o "%ENGINE_DIR%\node.zip"
+    echo   !DIM!    Version: v%NODE_VERSION%!RESET!
+    echo   !DIM!    Download log: %NODE_DOWNLOAD_LOG%!RESET!
+    if exist "%NODE_ARCHIVE%" del "%NODE_ARCHIVE%" >nul 2>&1
+    if exist "%NODE_DOWNLOAD_LOG%" del "%NODE_DOWNLOAD_LOG%" >nul 2>&1
+    call :download_node "%NODE_PRIMARY_URL%" "official Node.js CDN"
     if errorlevel 1 (
-        echo   !RED![ERROR] Failed to download Node.js!!RESET!
-        pause
-        exit /b 1
+        echo   !YELLOW![WARN] Official Node.js download failed. Trying fallback mirror...!RESET!
+        call :download_node "%NODE_FALLBACK_URL%" "fallback Node.js mirror"
     )
+    if errorlevel 1 goto node_download_failed
     echo   !YELLOW![~] Extracting Node.js...!RESET!
     echo   !DIM!    This can be silent for a few minutes on external drives.!RESET!
     if exist "%NODE_DIR%" rmdir /s /q "%NODE_DIR%"
-    powershell -NoProfile -Command "Expand-Archive -Path '%ENGINE_DIR%\node.zip' -DestinationPath '%ENGINE_DIR%' -Force"
+    powershell -NoProfile -Command "Expand-Archive -Path '%NODE_ARCHIVE%' -DestinationPath '%ENGINE_DIR%' -Force"
     if errorlevel 1 (
         echo   !RED![ERROR] Failed to extract Node.js!!RESET!
-        del "%ENGINE_DIR%\node.zip" >nul 2>&1
+        del "%NODE_ARCHIVE%" >nul 2>&1
         pause
         exit /b 1
     )
     ren "%ENGINE_DIR%\node-v%NODE_VERSION%-win-x64" "%NODE_DIR_NAME%"
-    del "%ENGINE_DIR%\node.zip"
+    del "%NODE_ARCHIVE%"
     echo   !GREEN![OK] Node.js installed to %NODE_DIR%!RESET!
 )
 
@@ -117,6 +140,49 @@ if exist "%OPENCLAUDE_DIR%" (
 call :install_engine "Installing"
 if errorlevel 1 exit /b 1
 :engine_ready
+
+goto after_node_download_helpers
+
+:download_node
+set "NODE_URL=%~1"
+set "NODE_SOURCE=%~2"
+echo   !YELLOW![~] Downloading Node.js from !NODE_SOURCE!...!RESET!
+echo [%DATE% %TIME%] Trying !NODE_SOURCE!: !NODE_URL!>>"%NODE_DOWNLOAD_LOG%"
+curl.exe --fail --location --retry 3 --retry-delay 3 --connect-timeout 20 "!NODE_URL!" --output "%NODE_ARCHIVE%" >>"%NODE_DOWNLOAD_LOG%" 2>&1
+if errorlevel 1 (
+    echo [%DATE% %TIME%] Failed: !NODE_SOURCE!>>"%NODE_DOWNLOAD_LOG%"
+    if exist "%NODE_ARCHIVE%" del "%NODE_ARCHIVE%" >nul 2>&1
+    exit /b 1
+)
+if not exist "%NODE_ARCHIVE%" (
+    echo [%DATE% %TIME%] Download command finished but archive is missing.>>"%NODE_DOWNLOAD_LOG%"
+    exit /b 1
+)
+for %%A in ("%NODE_ARCHIVE%") do set "NODE_ARCHIVE_SIZE=%%~zA"
+if "!NODE_ARCHIVE_SIZE!"=="0" (
+    echo [%DATE% %TIME%] Downloaded archive is empty.>>"%NODE_DOWNLOAD_LOG%"
+    del "%NODE_ARCHIVE%" >nul 2>&1
+    exit /b 1
+)
+echo [%DATE% %TIME%] Downloaded !NODE_ARCHIVE_SIZE! bytes from !NODE_SOURCE!.>>"%NODE_DOWNLOAD_LOG%"
+exit /b 0
+
+:node_download_failed
+echo.
+echo   !RED![ERROR] Automatic Node.js download failed.!RESET!
+echo.
+echo   Please install Node.js manually:
+echo   !CYAN!https://nodejs.org/en/download!RESET!
+echo.
+echo   After installing Node.js, restart OpenClaude Portable.
+echo   Download log: !NODE_DOWNLOAD_LOG!
+echo.
+echo   Common causes: temporary CDN/network failure, antivirus blocking curl,
+echo   TLS/certificate issues, or a restricted corporate network.
+pause
+exit /b 1
+
+:after_node_download_helpers
 
 :: 2.1 Check GitPortable
 if not exist "%GIT_BASH%" goto repair_git
@@ -360,6 +426,7 @@ goto save_settings_openrouter
     echo CLAUDE_CODE_USE_OPENAI=1
     echo OPENAI_API_KEY=%USER_API_KEY%
     echo OPENAI_BASE_URL=https://openrouter.ai/api/v1
+    echo OPENAI_API_FORMAT=chat_completions
     echo OPENAI_MODEL=%USER_MODEL%
     echo AI_DISPLAY_MODEL=%USER_MODEL%
 ) > "%ENV_FILE%"
@@ -443,6 +510,7 @@ if "!USER_MODEL!"=="" (
     echo CLAUDE_CODE_USE_OPENAI=1
     echo OPENAI_API_KEY=%USER_API_KEY%
     echo OPENAI_BASE_URL=https://integrate.api.nvidia.com/v1
+    echo OPENAI_API_FORMAT=chat_completions
     echo OPENAI_MODEL=%USER_MODEL%
     echo AI_DISPLAY_MODEL=%USER_MODEL%
 ) > "%ENV_FILE%"
@@ -509,6 +577,7 @@ if "!USER_MODEL!"=="" (
     echo CLAUDE_CODE_USE_OPENAI=1
     echo OPENAI_API_KEY=%USER_API_KEY%
     echo OPENAI_BASE_URL=https://api.deepseek.com
+    echo OPENAI_API_FORMAT=chat_completions
     echo OPENAI_MODEL=%USER_MODEL%
     echo AI_DISPLAY_MODEL=%USER_MODEL%
 ) > "%ENV_FILE%"
@@ -626,6 +695,7 @@ if "%USER_MODEL%"=="" set "USER_MODEL=llama3.2:3b"
     echo CLAUDE_CODE_USE_OPENAI=1
     echo OPENAI_API_KEY=ollama
     echo OPENAI_BASE_URL=http://localhost:11434/v1
+    echo OPENAI_API_FORMAT=chat_completions
     echo OPENAI_MODEL=%USER_MODEL%
     echo AI_DISPLAY_MODEL=%USER_MODEL%
 ) > "%ENV_FILE%"
@@ -685,6 +755,7 @@ if "!USER_MODEL!"=="" (
     echo CLAUDE_CODE_USE_OPENAI=1
     echo OPENAI_API_KEY=%USER_API_KEY%
     echo OPENAI_BASE_URL=%LM_BASE_URL%
+    echo OPENAI_API_FORMAT=chat_completions
     echo OPENAI_MODEL=%USER_MODEL%
     echo AI_DISPLAY_MODEL=%USER_MODEL%
 ) > "%ENV_FILE%"
@@ -745,6 +816,7 @@ if "!USER_MODEL!"=="" (
     echo CLAUDE_CODE_USE_OPENAI=1
     echo OPENAI_API_KEY=%USER_API_KEY%
     echo OPENAI_BASE_URL=%CUSTOM_BASE_URL%
+    echo OPENAI_API_FORMAT=chat_completions
     echo OPENAI_MODEL=%USER_MODEL%
     echo AI_DISPLAY_MODEL=%USER_MODEL%
 ) > "%ENV_FILE%"
@@ -781,6 +853,7 @@ if "%USER_MODEL%"=="" set "USER_MODEL=gpt-4o"
     echo CLAUDE_CODE_USE_OPENAI=1
     echo OPENAI_API_KEY=%USER_API_KEY%
     echo OPENAI_BASE_URL=https://api.openai.com/v1
+    echo OPENAI_API_FORMAT=chat_completions
     echo OPENAI_MODEL=%USER_MODEL%
     echo AI_DISPLAY_MODEL=%USER_MODEL%
 ) > "%ENV_FILE%"
@@ -803,6 +876,13 @@ for /f "usebackq tokens=1,* delims==" %%A in ("%ENV_FILE%") do (
 if not "!AI_PROVIDER!"=="anthropic" (
     set "ANTHROPIC_API_KEY="
 )
+if /I "!AI_PROVIDER!"=="openai" (
+    if defined OPENAI_BASE_URL (
+        if not defined OPENAI_API_FORMAT set "OPENAI_API_FORMAT=chat_completions"
+    )
+)
+set "CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED=1"
+set "CLAUDE_CODE_PROVIDER_PROFILE_ENV_APPLIED_ID=portable-env"
 
 :: Friendly provider name
 set "PROVIDER_NAME=!AI_PROVIDER!"
@@ -918,14 +998,24 @@ echo   !CYAN![~] Starting AI Engine...!RESET!
 echo.
 
 set "PROVIDER_ARGS="
-if defined AI_PROVIDER set "PROVIDER_ARGS=--provider !AI_PROVIDER!"
+if /I "!AI_PROVIDER!"=="anthropic" set "PROVIDER_ARGS=--provider anthropic"
+if /I "!AI_PROVIDER!"=="gemini" set "PROVIDER_ARGS=--provider gemini"
+if /I "!AI_PROVIDER!"=="ollama" set "PROVIDER_ARGS=--provider ollama"
+if /I "!AI_PROVIDER!"=="openai" (
+    echo !OPENAI_BASE_URL! | findstr /C:"integrate.api.nvidia.com" >nul && set "PROVIDER_ARGS=--provider nvidia-nim"
+)
+set "MODEL_ARGS="
+if defined OPENAI_MODEL set "MODEL_ARGS=--model !OPENAI_MODEL!"
+if defined GEMINI_MODEL set "MODEL_ARGS=--model !GEMINI_MODEL!"
+if defined ANTHROPIC_MODEL set "MODEL_ARGS=--model !ANTHROPIC_MODEL!"
+set "SETTINGS_ARGS=--setting-sources local"
 
 pushd "%ENGINE_DIR%"
 if exist "%OC_BIN%" goto use_oc_bin
 echo   !RED![ERROR] OpenClaude Engine is missing. Restart START.bat to repair the install.!RESET!
 goto engine_done
 :use_oc_bin
-call "%NODE_DIR%\node.exe" "%OC_BIN%" !PROVIDER_ARGS! !CMD_ARGS!
+call "%NODE_DIR%\node.exe" "%OC_BIN%" !SETTINGS_ARGS! !PROVIDER_ARGS! !MODEL_ARGS! !CMD_ARGS!
 :engine_done
 popd
 

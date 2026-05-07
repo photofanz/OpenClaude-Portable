@@ -144,7 +144,7 @@ Use **Custom API** for any provider that exposes OpenAI-style endpoints. The set
 - API key, or blank for local providers that do not require one
 - Model name, fetched from `/models` when available or entered manually
 
-The saved config uses `AI_PROVIDER=openai`, `CLAUDE_CODE_USE_OPENAI=1`, `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL`.
+The saved config uses `AI_PROVIDER=openai`, `CLAUDE_CODE_USE_OPENAI=1`, `OPENAI_BASE_URL`, `OPENAI_API_FORMAT=chat_completions`, `OPENAI_API_KEY`, and `OPENAI_MODEL`. The launcher does not pass `--provider openai` for these providers; it lets the endpoint and model environment variables select the OpenAI-compatible backend so saved Codex/OpenAI profiles do not take over.
 
 ---
 
@@ -194,6 +194,8 @@ Proxy activity is logged silently to `data/proxy.log` — it never writes to the
 | Symptom | Fix |
 |---|---|
 | `Node.js not found` | Run `START.bat` first — it downloads Node automatically |
+| `Automatic Node.js download failed` | Check `engine/node-download.log`, allow `curl` through antivirus/firewall, or install Node.js manually from [nodejs.org/download](https://nodejs.org/en/download) and restart OpenClaude Portable |
+| Stuck at `Installing OpenClaude Engine` on USB | Wait at least 10-15 minutes on slow USB media and check `engine/openclaude-engine-install.log`. For first-time setup, a USB 3.x port/drive or running the first install on internal storage and copying the completed folder back to USB is much faster |
 | `EADDRINUSE: port 11435` | The speed proxy from a previous session is still running. Restart `START.bat` — it kills it automatically |
 | `openclaude: dist/cli.mjs not found` | The engine install was interrupted. Pull the latest launcher and run `START.bat` again; it will repair incomplete installs automatically |
 | `npm error could not determine executable to run` | Pull the latest launcher. The app now runs the verified bundled OpenClaude binary instead of falling back to `npx` |
