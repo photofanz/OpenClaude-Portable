@@ -2,7 +2,7 @@ import { createServer } from 'http';
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, mkdirSync, unlinkSync } from 'fs';
 import { join, dirname, resolve, relative, isAbsolute } from 'path';
 import { fileURLToPath } from 'url';
-import { execSync, exec } from 'child_process';
+import { execSync, exec, spawn } from 'child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = join(__dirname, '..'); // Portable_AI_USB root
@@ -1077,6 +1077,39 @@ const server = createServer(async (req, res) => {
         try { sendJSON(res, 500, { error: err.message }); } catch {}
     }
 });
+
+// ─── Claude Max proxy self-heal ──────────────────────────────
+// 如果使用者直接跑 open_dashboard.sh（沒經 start.sh 主流程），且設定是
+// Claude Max 模式但 proxy 沒在跑，這裡背景起一個。注意：detached + unref，
+// dashboard 結束時 proxy 不會跟著被 kill（會變孤兒，需手動 lsof :3456 + kill）。
+async function ensureClaudeMaxProxy() {
+    const cfg = readConfig();
+    if (cfg.CLAUDE_PROXY_MODE !== '1') return;
+    if (!cfg.OPENAI_BASE_URL || !cfg.OPENAI_BASE_URL.includes('127.0.0.1:3456')) return;
+
+    const healthOk = await fetch('http://127.0.0.1:3456/health')
+        .then(r => r.ok).catch(() => false);
+    if (healthOk) return;
+
+    const proxyDir = join(ROOT_DIR, 'tools', 'claude-proxy');
+    if (!existsSync(join(proxyDir, 'server.js'))) {
+        console.log('  [WARN] CLAUDE_PROXY_MODE=1 but tools/claude-proxy/server.js missing.');
+        return;
+    }
+    console.log('  [~] Claude Max proxy not running — starting it in background...');
+    const proc = spawn(process.execPath, ['server.js'], {
+        cwd: proxyDir, stdio: 'ignore', detached: true,
+    });
+    proc.unref();
+    for (let i = 0; i < 5; i++) {
+        await new Promise(r => setTimeout(r, 1000));
+        const ok = await fetch('http://127.0.0.1:3456/health').then(r => r.ok).catch(() => false);
+        if (ok) { console.log('  [OK] Claude Max proxy ready.'); return; }
+    }
+    console.log('  [WARN] Claude Max proxy did not become ready in 5s.');
+}
+
+await ensureClaudeMaxProxy();
 
 server.listen(PORT, () => {
     console.log(`\n  Dashboard running at http://localhost:${PORT}`);
