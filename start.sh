@@ -193,9 +193,11 @@ echo ""
 # ─── Check for flags ────────────────────────────────────────
 SKIP_UPDATE=0
 QUICK_MODE=0
+SKIP_CLAUDE_CLI_UPDATE=0
 for arg in "$@"; do
     [ "$arg" = "--offline" ] && SKIP_UPDATE=1
     [ "$arg" = "--quick" ] && QUICK_MODE=1
+    [ "$arg" = "--no-claude-cli-update" ] && SKIP_CLAUDE_CLI_UPDATE=1
 done
 
 # ─── Check for Engine Updates ────────────────────────────────
@@ -210,6 +212,16 @@ else
         echo -e "  ${GREEN}[OK] Engine upgraded to latest version!${RESET}"
     else
         echo -e "  ${GREEN}[OK] Engine is up to date!${RESET}"
+    fi
+    # claude CLI 更新檢查（只要 claude CLI 已安裝且未被旗標跳過 — Claude Max 路徑用）
+    if [ "$SKIP_CLAUDE_CLI_UPDATE" -eq 0 ] && [ -d "$ENGINE_DIR/node_modules/@anthropic-ai/claude-code" ]; then
+        cd "$ENGINE_DIR"
+        if "$NPM_BIN" outdated @anthropic-ai/claude-code 2>/dev/null | grep -q claude-code; then
+            echo -e "  ${YELLOW}[~] New claude CLI version — upgrading...${RESET}"
+            NPM_CONFIG_CACHE="$NPM_CACHE_DIR" "$NPM_BIN" install @anthropic-ai/claude-code@latest \
+                --no-audit --no-fund --loglevel=warn --no-bin-links --cache "$NPM_CACHE_DIR" >/dev/null 2>&1
+            echo -e "  ${GREEN}[OK] claude CLI upgraded.${RESET}"
+        fi
     fi
 fi
 echo ""
@@ -236,6 +248,12 @@ save_env() {
     echo "$1" > "$ENV_FILE"
 }
 
+# 載入 Claude Max 共用函式（需要 ROOT_DIR ENGINE_DIR DATA_DIR ENV_FILE NODE_BIN NPM_BIN NPM_CACHE_DIR 已定義）
+if [ -f "$ROOT_DIR/tools/_claude_max_lib.sh" ]; then
+    # shellcheck disable=SC1091
+    source "$ROOT_DIR/tools/_claude_max_lib.sh"
+fi
+
 setup_provider() {
     echo -e "${CYAN}=========================================================${RESET}"
     echo -e "  ${BOLD}AI PROVIDER SELECTION${RESET}"
@@ -250,10 +268,11 @@ setup_provider() {
     echo -e "  ${CYAN}7)${RESET} ${BOLD}Ollama${RESET}       ${DIM}- Local Offline AI (No internet)${RESET}"
     echo -e "  ${CYAN}8)${RESET} ${BOLD}LM Studio${RESET}    ${DIM}- Local OpenAI-compatible server${RESET}"
     echo -e "  ${CYAN}9)${RESET} ${BOLD}Custom API${RESET}    ${DIM}- Any OpenAI-compatible provider${RESET}"
+    echo -e "  ${CYAN}10)${RESET} ${BOLD}Claude (Max Subscription)${RESET} ${DIM}- \$200/mo, OAuth, no per-token cost (macOS/Linux)${RESET}"
     echo ""
 
     while true; do
-        read -p "  Select your provider (1-9): " PROVIDER_SEL
+        read -p "  Select your provider (1-10): " PROVIDER_SEL
         case "$PROVIDER_SEL" in
             1) setup_openrouter; return ;;
             2) setup_nvidia; return ;;
@@ -264,7 +283,8 @@ setup_provider() {
             7) setup_ollama; return ;;
             8) setup_lmstudio; return ;;
             9) setup_custom_openai; return ;;
-            *) echo -e "  ${RED}[ERROR] Invalid selection. Please choose 1-9.${RESET}" ;;
+            10) setup_claude_max; return ;;
+            *) echo -e "  ${RED}[ERROR] Invalid selection. Please choose 1-10.${RESET}" ;;
         esac
     done
 }
@@ -836,6 +856,30 @@ if [ "$AI_PROVIDER" = "ollama" ]; then
     fi
 fi
 
+# ─── Claude Max proxy (按需起停，跟 Ollama 同模式) ───────────
+if [ "$CLAUDE_PROXY_MODE" = "1" ]; then
+    PROXY_LOG="$DATA_DIR/claude-proxy.log"
+    PROXY_DIR="$ROOT_DIR/tools/claude-proxy"
+    if [ ! -f "$PROXY_DIR/server.js" ]; then
+        echo -e "  ${RED}[ERROR] tools/claude-proxy submodule missing. Run: git submodule update --init${RESET}"
+    else
+        echo -e "  ${CYAN}[~] Starting Claude Max proxy...${RESET}"
+        ( cd "$PROXY_DIR" && "$NODE_BIN" server.js >> "$PROXY_LOG" 2>&1 ) &
+        CLAUDE_PROXY_PID=$!
+        for _i in 1 2 3 4 5; do
+            sleep 1
+            if curl -sf "http://127.0.0.1:3456/health" >/dev/null 2>&1; then
+                echo -e "  ${GREEN}[OK] Claude Max proxy ready (PID $CLAUDE_PROXY_PID).${RESET}"
+                break
+            fi
+        done
+        if ! curl -sf "http://127.0.0.1:3456/health" >/dev/null 2>&1; then
+            echo -e "  ${YELLOW}[WARN] Claude Max proxy not responding after 5s — check $PROXY_LOG${RESET}"
+        fi
+        echo ""
+    fi
+fi
+
 echo -e "  ${CYAN}[~] Starting AI Engine...${RESET}"
 echo ""
 
@@ -877,4 +921,11 @@ if [ -n "$OLLAMA_PID" ]; then
     echo -e "  ${CYAN}[~] Stopping Local Ollama Server...${RESET}"
     kill "$OLLAMA_PID" 2>/dev/null
     wait "$OLLAMA_PID" 2>/dev/null
+fi
+
+if [ -n "$CLAUDE_PROXY_PID" ]; then
+    echo ""
+    echo -e "  ${CYAN}[~] Stopping Claude Max proxy...${RESET}"
+    kill "$CLAUDE_PROXY_PID" 2>/dev/null
+    wait "$CLAUDE_PROXY_PID" 2>/dev/null
 fi
