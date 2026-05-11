@@ -908,11 +908,9 @@ case "$AI_PROVIDER" in
     anthropic) PROVIDER_ARGS=(--provider anthropic) ;;
     gemini) PROVIDER_ARGS=(--provider gemini) ;;
     ollama) PROVIDER_ARGS=(--provider ollama) ;;
-    codex)
-        PROVIDER_ARGS=(--provider codex)
-        # CODEX_HOME 已由上方 env 載入迴圈 export；引擎讀 $CODEX_HOME/auth.json 的 OAuth token、自己 refresh
-        ;;
     openai)
+        # Codex（OAuth）走 provider=openai + codex backend base URL，不傳 --provider；
+        # CODEX_HOME 已由上方 env 載入迴圈 export，引擎讀 $CODEX_HOME/auth.json 的 OAuth token、自己 refresh。
         if [[ "$OPENAI_BASE_URL" == *"integrate.api.nvidia.com"* ]]; then
             PROVIDER_ARGS=(--provider nvidia-nim)
         fi

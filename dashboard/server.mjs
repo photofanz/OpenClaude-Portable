@@ -493,6 +493,12 @@ function parseChatgptAccountId(idToken, accessToken) {
     }
     return undefined;
 }
+// Codex setup = provider openai + the Codex backend base URL (or the oauth-source marker / legacy AI_PROVIDER=codex)
+function isCodexSetup(cfg) {
+    return cfg.AI_PROVIDER === 'codex'
+        || (cfg.OPENAI_BASE_URL && cfg.OPENAI_BASE_URL.includes('backend-api/codex'))
+        || cfg.CODEX_CREDENTIAL_SOURCE === 'oauth';
+}
 function codexAuthPath(cfg) {
     const home = cfg.CODEX_HOME || join(ROOT_DIR, 'data', 'codex');
     return join(home, 'auth.json');
@@ -588,10 +594,10 @@ async function callAI_Codex(messages, cfg, _includeTools = true) {
 // Unified caller
 async function callAI(messages, cfg, includeTools = true) {
     const provider = cfg.AI_PROVIDER;
+    if (isCodexSetup(cfg)) return callAI_Codex(messages, cfg, includeTools);
     if (provider === 'openai' || provider === 'ollama') return callAI_OpenAI(messages, cfg, includeTools);
     if (provider === 'anthropic') return callAI_Anthropic(messages, cfg, includeTools);
     if (provider === 'gemini') return callAI_Gemini(messages, cfg, includeTools);
-    if (provider === 'codex') return callAI_Codex(messages, cfg, includeTools);
     throw new Error(`Unsupported provider for agent mode: ${provider}`);
 }
 
@@ -763,6 +769,40 @@ async function streamChatResponse(messages, cfg, res) {
 
     const sendSSE = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
 
+    // ── Codex (ChatGPT subscription) — provider=openai + codex backend URL ──
+    if (isCodexSetup(cfg)) {
+        let fullText = '';
+        try {
+            const auth = await ensureFreshCodexToken(cfg);
+            const body = JSON.stringify(buildCodexBody(messages, cfg, true));
+            const headers = { ...codexHeaders(auth), 'Content-Length': String(Buffer.byteLength(body)) };
+            await streamExternal(CODEX_RESPONSES_URL, headers, body,
+                (chunk) => {
+                    chunk.split('\n').forEach(line => {
+                        if (!line.startsWith('data:')) return;
+                        const raw = line.slice(5).trim();
+                        if (!raw || raw === '[DONE]') return;
+                        try {
+                            const ev = JSON.parse(raw);
+                            const t = ev.type || ev.event;
+                            if (t === 'response.output_text.delta' && ev.delta) {
+                                fullText += ev.delta; sendSSE({ type: 'delta', content: ev.delta });
+                            } else if (t === 'response.failed' || t === 'error') {
+                                const msg = ev.response?.error?.message || ev.error?.message || 'Codex request failed';
+                                sendSSE({ type: 'error', content: msg });
+                            }
+                        } catch {}
+                    });
+                },
+                () => { sendSSE({ type: 'done', fullText }); res.end(); }
+            );
+        } catch (e) {
+            sendSSE({ type: 'error', content: `Codex error: ${e.message}` });
+            res.end();
+        }
+        return fullText;
+    }
+
     // ── OpenAI-compatible (OpenRouter, Ollama, OpenAI) ────────
     if (provider === 'openai' || provider === 'ollama') {
         const body = JSON.stringify({ model, messages, stream: true });
@@ -831,40 +871,6 @@ async function streamChatResponse(messages, cfg, res) {
             },
             () => { sendSSE({ type: 'done', fullText }); res.end(); }
         );
-        return fullText;
-    }
-
-    // ── Codex (ChatGPT subscription) ──────────────────────────
-    if (provider === 'codex') {
-        let fullText = '';
-        try {
-            const auth = await ensureFreshCodexToken(cfg);
-            const body = JSON.stringify(buildCodexBody(messages, cfg, true));
-            const headers = { ...codexHeaders(auth), 'Content-Length': String(Buffer.byteLength(body)) };
-            await streamExternal(CODEX_RESPONSES_URL, headers, body,
-                (chunk) => {
-                    chunk.split('\n').forEach(line => {
-                        if (!line.startsWith('data:')) return;
-                        const raw = line.slice(5).trim();
-                        if (!raw || raw === '[DONE]') return;
-                        try {
-                            const ev = JSON.parse(raw);
-                            const t = ev.type || ev.event;
-                            if (t === 'response.output_text.delta' && ev.delta) {
-                                fullText += ev.delta; sendSSE({ type: 'delta', content: ev.delta });
-                            } else if (t === 'response.failed' || t === 'error') {
-                                const msg = ev.response?.error?.message || ev.error?.message || 'Codex request failed';
-                                sendSSE({ type: 'error', content: msg });
-                            }
-                        } catch {}
-                    });
-                },
-                () => { sendSSE({ type: 'done', fullText }); res.end(); }
-            );
-        } catch (e) {
-            sendSSE({ type: 'error', content: `Codex error: ${e.message}` });
-            res.end();
-        }
         return fullText;
     }
 

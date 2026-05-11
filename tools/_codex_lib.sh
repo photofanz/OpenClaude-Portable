@@ -101,14 +101,21 @@ setup_codex() {
     esac
 
     # 4) 寫 ai_settings.env
+    #    引擎的「codex」不是 --provider 值，而是走 provider=openai + Codex backend base URL
+    #    + OAuth credentials（從 $CODEX_HOME/auth.json）。OPENAI_API_KEY 用引擎自己的
+    #    placeholder「codex-oauth-token-for-validation」讓 pre-flight 檢查過關；實際請求用
+    #    auth.json 的 access token。codex base URL → 引擎自動用 codex_responses transport。
     save_env "# ========================================================
 # Portable AI - Master Switchboard (OpenAI Codex via ChatGPT subscription)
 # ========================================================
-AI_PROVIDER=codex
-CODEX_HOME=$CODEX_HOME_DIR
-CODEX_CREDENTIAL_SOURCE=oauth
+AI_PROVIDER=openai
+CLAUDE_CODE_USE_OPENAI=1
+OPENAI_BASE_URL=https://chatgpt.com/backend-api/codex
+OPENAI_API_KEY=codex-oauth-token-for-validation
 OPENAI_MODEL=$CODEX_MODEL
-AI_DISPLAY_MODEL=$CODEX_MODEL"
+AI_DISPLAY_MODEL=$CODEX_MODEL
+CODEX_HOME=$CODEX_HOME_DIR
+CODEX_CREDENTIAL_SOURCE=oauth"
 
     echo ""
     echo -e "  ${GREEN}[OK] Codex configured (model: $CODEX_MODEL). No proxy needed — the engine connects to Codex directly.${RESET}"
