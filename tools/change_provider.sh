@@ -11,18 +11,22 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 DATA_DIR="$ROOT_DIR/data"
 ENV_FILE="$DATA_DIR/ai_settings.env"
 
-# ─── Claude Max wizard 需要的變數 + 共用函式 ────────────────
+# ─── Claude Max / Codex wizard 需要的變數 + 共用函式 ────────
 ENGINE_DIR="$ROOT_DIR/engine"
 NPM_CACHE_DIR="$DATA_DIR/npm-cache"
 _PLATFORM=$(uname -s | tr '[:upper:]' '[:lower:]'); [ "$_PLATFORM" = "darwin" ] || _PLATFORM="linux"
 _ARCH=$(uname -m); case "$_ARCH" in x86_64|amd64) _ARCH=x64;; arm64|aarch64) _ARCH=arm64;; esac
 NODE_BIN="$ENGINE_DIR/node-$_PLATFORM-$_ARCH/bin/node"
 NPM_BIN="$ENGINE_DIR/node-$_PLATFORM-$_ARCH/bin/npm"
-# _claude_max_lib.sh 用 save_env "<整份 env 內容>"
+# _claude_max_lib.sh / _codex_lib.sh 用 save_env "<整份 env 內容>"
 save_env() { echo "$1" > "$ENV_FILE"; }
 if [ -f "$ROOT_DIR/tools/_claude_max_lib.sh" ]; then
     # shellcheck disable=SC1091
     source "$ROOT_DIR/tools/_claude_max_lib.sh"
+fi
+if [ -f "$ROOT_DIR/tools/_codex_lib.sh" ]; then
+    # shellcheck disable=SC1091
+    source "$ROOT_DIR/tools/_codex_lib.sh"
 fi
 
 mask_key() {
@@ -101,6 +105,11 @@ EOF
         anthropic)
             echo "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" >> "$ENV_FILE"
             echo "ANTHROPIC_MODEL=$ANTHROPIC_MODEL" >> "$ENV_FILE"
+            ;;
+        codex)
+            echo "CODEX_HOME=${CODEX_HOME:-$DATA_DIR/codex}" >> "$ENV_FILE"
+            echo "CODEX_CREDENTIAL_SOURCE=${CODEX_CREDENTIAL_SOURCE:-oauth}" >> "$ENV_FILE"
+            echo "OPENAI_MODEL=$OPENAI_MODEL" >> "$ENV_FILE"
             ;;
         ollama)
             echo "CLAUDE_CODE_USE_OPENAI=$CLAUDE_CODE_USE_OPENAI" >> "$ENV_FILE"
@@ -191,9 +200,10 @@ echo -e "  ${CYAN}2)${RESET} Change API Key"
 echo -e "  ${CYAN}3)${RESET} Full Reset Config ${DIM}(Clear all settings)${RESET}"
 echo -e "  ${CYAN}4)${RESET} Cancel"
 echo -e "  ${CYAN}5)${RESET} Switch to Claude (Max Subscription) ${DIM}- OAuth, no API key (macOS/Linux); re-run to change model${RESET}"
+echo -e "  ${CYAN}6)${RESET} Switch to OpenAI Codex (ChatGPT Subscription) ${DIM}- OAuth, no API key, no proxy (macOS/Linux); re-run to change model${RESET}"
 echo ""
 
-read -p "  Select an option (1-5): " OPTION
+read -p "  Select an option (1-6): " OPTION
 
 case "$OPTION" in
     1)
@@ -314,6 +324,20 @@ case "$OPTION" in
                 fi
                 [ -n "$NEW_MODEL" ] && OPENAI_MODEL="$NEW_MODEL" && AI_DISPLAY_MODEL="$NEW_MODEL"
                 ;;
+            codex)
+                echo -e "  ${CYAN}1)${RESET} gpt-5.1-codex"
+                echo -e "  ${CYAN}2)${RESET} gpt-5.1-codex-max"
+                echo -e "  ${CYAN}3)${RESET} gpt-5.1-codex-mini"
+                echo -e "  ${CYAN}4)${RESET} Custom..."
+                read -p "  Select (1-4) [Enter for 1]: " _CMSEL
+                case "$_CMSEL" in
+                    2) NEW_MODEL="gpt-5.1-codex-max" ;;
+                    3) NEW_MODEL="gpt-5.1-codex-mini" ;;
+                    4) read -p "  Enter custom Codex model string: " NEW_MODEL ;;
+                    *) NEW_MODEL="gpt-5.1-codex" ;;
+                esac
+                [ -n "$NEW_MODEL" ] && OPENAI_MODEL="$NEW_MODEL" && AI_DISPLAY_MODEL="$NEW_MODEL"
+                ;;
             anthropic|openai|ollama)
                 read -p "  Enter new model string (Current: $AI_DISPLAY_MODEL): " NEW_MODEL
                 if [ -n "$NEW_MODEL" ]; then
@@ -366,6 +390,14 @@ case "$OPTION" in
             setup_claude_max
         else
             echo -e "  ${RED}[ERROR] tools/_claude_max_lib.sh not found — cannot switch to Claude Max.${RESET}"
+        fi
+        ;;
+    6)
+        echo ""
+        if command -v setup_codex >/dev/null 2>&1; then
+            setup_codex
+        else
+            echo -e "  ${RED}[ERROR] tools/_codex_lib.sh not found — cannot switch to Codex.${RESET}"
         fi
         ;;
     *)

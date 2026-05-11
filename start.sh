@@ -194,10 +194,12 @@ echo ""
 SKIP_UPDATE=0
 QUICK_MODE=0
 SKIP_CLAUDE_CLI_UPDATE=0
+SKIP_CODEX_CLI_UPDATE=0
 for arg in "$@"; do
     [ "$arg" = "--offline" ] && SKIP_UPDATE=1
     [ "$arg" = "--quick" ] && QUICK_MODE=1
     [ "$arg" = "--no-claude-cli-update" ] && SKIP_CLAUDE_CLI_UPDATE=1
+    [ "$arg" = "--no-codex-cli-update" ] && SKIP_CODEX_CLI_UPDATE=1
 done
 
 # ─── Check for Engine Updates ────────────────────────────────
@@ -221,6 +223,16 @@ else
             NPM_CONFIG_CACHE="$NPM_CACHE_DIR" "$NPM_BIN" install @anthropic-ai/claude-code@latest \
                 --no-audit --no-fund --loglevel=warn --no-bin-links --cache "$NPM_CACHE_DIR" >/dev/null 2>&1
             echo -e "  ${GREEN}[OK] claude CLI upgraded.${RESET}"
+        fi
+    fi
+    # codex CLI 更新檢查（只要已安裝且未被旗標跳過 — Codex 路徑用）
+    if [ "$SKIP_CODEX_CLI_UPDATE" -eq 0 ] && [ -d "$ENGINE_DIR/node_modules/@openai/codex" ]; then
+        cd "$ENGINE_DIR"
+        if "$NPM_BIN" outdated @openai/codex 2>/dev/null | grep -q '@openai/codex'; then
+            echo -e "  ${YELLOW}[~] New Codex CLI version — upgrading...${RESET}"
+            NPM_CONFIG_CACHE="$NPM_CACHE_DIR" "$NPM_BIN" install @openai/codex@latest \
+                --no-audit --no-fund --loglevel=warn --no-bin-links --cache "$NPM_CACHE_DIR" >/dev/null 2>&1
+            echo -e "  ${GREEN}[OK] Codex CLI upgraded.${RESET}"
         fi
     fi
 fi
@@ -248,10 +260,14 @@ save_env() {
     echo "$1" > "$ENV_FILE"
 }
 
-# 載入 Claude Max 共用函式（需要 ROOT_DIR ENGINE_DIR DATA_DIR ENV_FILE NODE_BIN NPM_BIN NPM_CACHE_DIR 已定義）
+# 載入 Claude Max / Codex 共用函式（需要 ROOT_DIR ENGINE_DIR DATA_DIR ENV_FILE NODE_BIN NPM_BIN NPM_CACHE_DIR 已定義）
 if [ -f "$ROOT_DIR/tools/_claude_max_lib.sh" ]; then
     # shellcheck disable=SC1091
     source "$ROOT_DIR/tools/_claude_max_lib.sh"
+fi
+if [ -f "$ROOT_DIR/tools/_codex_lib.sh" ]; then
+    # shellcheck disable=SC1091
+    source "$ROOT_DIR/tools/_codex_lib.sh"
 fi
 
 setup_provider() {
@@ -269,10 +285,11 @@ setup_provider() {
     echo -e "  ${CYAN}8)${RESET} ${BOLD}LM Studio${RESET}    ${DIM}- Local OpenAI-compatible server${RESET}"
     echo -e "  ${CYAN}9)${RESET} ${BOLD}Custom API${RESET}    ${DIM}- Any OpenAI-compatible provider${RESET}"
     echo -e "  ${CYAN}10)${RESET} ${BOLD}Claude (Max Subscription)${RESET} ${DIM}- \$200/mo, OAuth, no per-token cost (macOS/Linux)${RESET}"
+    echo -e "  ${CYAN}11)${RESET} ${BOLD}OpenAI Codex (ChatGPT Subscription)${RESET} ${DIM}- OAuth, no API key, no proxy (macOS/Linux)${RESET}"
     echo ""
 
     while true; do
-        read -p "  Select your provider (1-10): " PROVIDER_SEL
+        read -p "  Select your provider (1-11): " PROVIDER_SEL
         case "$PROVIDER_SEL" in
             1) setup_openrouter; return ;;
             2) setup_nvidia; return ;;
@@ -284,7 +301,8 @@ setup_provider() {
             8) setup_lmstudio; return ;;
             9) setup_custom_openai; return ;;
             10) setup_claude_max; return ;;
-            *) echo -e "  ${RED}[ERROR] Invalid selection. Please choose 1-10.${RESET}" ;;
+            11) setup_codex; return ;;
+            *) echo -e "  ${RED}[ERROR] Invalid selection. Please choose 1-11.${RESET}" ;;
         esac
     done
 }
@@ -890,6 +908,10 @@ case "$AI_PROVIDER" in
     anthropic) PROVIDER_ARGS=(--provider anthropic) ;;
     gemini) PROVIDER_ARGS=(--provider gemini) ;;
     ollama) PROVIDER_ARGS=(--provider ollama) ;;
+    codex)
+        PROVIDER_ARGS=(--provider codex)
+        # CODEX_HOME 已由上方 env 載入迴圈 export；引擎讀 $CODEX_HOME/auth.json 的 OAuth token、自己 refresh
+        ;;
     openai)
         if [[ "$OPENAI_BASE_URL" == *"integrate.api.nvidia.com"* ]]; then
             PROVIDER_ARGS=(--provider nvidia-nim)

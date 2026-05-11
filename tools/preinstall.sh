@@ -43,7 +43,7 @@ fi
 mkdir -p "$NPM_CACHE_DIR"
 
 # ── 1) claude CLI（OAuth 登入用）────────────────────────────
-echo -e "${YELLOW}[1/2] @anthropic-ai/claude-code (claude CLI, for OAuth login)${RESET}"
+echo -e "${YELLOW}[1/3] @anthropic-ai/claude-code (claude CLI, for Claude Max OAuth login)${RESET}"
 ( cd "$ENGINE_DIR" && NPM_CONFIG_CACHE="$NPM_CACHE_DIR" "$NPM_BIN" install @anthropic-ai/claude-code@latest \
     --no-audit --no-fund --loglevel=warn --no-bin-links --cache "$NPM_CACHE_DIR" )
 # 平台專屬原生 binary 在 @anthropic-ai/claude-code-<platform>-<arch>/claude
@@ -56,8 +56,18 @@ else
     echo -e "${RED}      install incomplete (no claude binary found)${RESET}"; exit 1
 fi
 
-# ── 2) proxy submodule 依賴 ─────────────────────────────────
-echo -e "${YELLOW}[2/2] tools/claude-proxy dependencies${RESET}"
+# ── 2) Codex CLI（ChatGPT 訂閱 OAuth 登入用）────────────────
+echo -e "${YELLOW}[2/3] @openai/codex (Codex CLI, for ChatGPT-subscription OAuth login)${RESET}"
+( cd "$ENGINE_DIR" && NPM_CONFIG_CACHE="$NPM_CACHE_DIR" "$NPM_BIN" install @openai/codex@latest \
+    --no-audit --no-fund --loglevel=warn --no-bin-links --cache "$NPM_CACHE_DIR" )
+if [ -f "$ENGINE_DIR/node_modules/@openai/codex/bin/codex.js" ]; then
+    echo -e "${GREEN}      OK${RESET}"
+else
+    echo -e "${RED}      install incomplete (no codex/bin/codex.js found)${RESET}"; exit 1
+fi
+
+# ── 3) proxy submodule 依賴（Claude Max 用）────────────────
+echo -e "${YELLOW}[3/3] tools/claude-proxy dependencies (for Claude Max)${RESET}"
 if [ ! -f "$ROOT_DIR/tools/claude-proxy/package.json" ]; then
     echo -e "${YELLOW}      Submodule not initialised. Run: git submodule update --init tools/claude-proxy${RESET}"
     exit 1
@@ -71,6 +81,6 @@ else
 fi
 
 echo ""
-echo -e "${GREEN}Done. Next ./start.sh → option 10 (Claude Max) skips the dependency install.${RESET}"
-echo -e "${DIM}（Claude Max 路徑仍需在 wizard 裡完成一次 OAuth 登入。）${RESET}"
+echo -e "${GREEN}Done. Next ./start.sh → option 10 (Claude Max) or 11 (Codex) skips the dependency install.${RESET}"
+echo -e "${DIM}（Claude Max 與 Codex 路徑都仍需在 wizard 裡完成一次 OAuth 登入。）${RESET}"
 echo ""
