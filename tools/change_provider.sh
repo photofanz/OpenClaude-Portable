@@ -11,6 +11,20 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 DATA_DIR="$ROOT_DIR/data"
 ENV_FILE="$DATA_DIR/ai_settings.env"
 
+# ─── Claude Max wizard 需要的變數 + 共用函式 ────────────────
+ENGINE_DIR="$ROOT_DIR/engine"
+NPM_CACHE_DIR="$DATA_DIR/npm-cache"
+_PLATFORM=$(uname -s | tr '[:upper:]' '[:lower:]'); [ "$_PLATFORM" = "darwin" ] || _PLATFORM="linux"
+_ARCH=$(uname -m); case "$_ARCH" in x86_64|amd64) _ARCH=x64;; arm64|aarch64) _ARCH=arm64;; esac
+NODE_BIN="$ENGINE_DIR/node-$_PLATFORM-$_ARCH/bin/node"
+NPM_BIN="$ENGINE_DIR/node-$_PLATFORM-$_ARCH/bin/npm"
+# _claude_max_lib.sh 用 save_env "<整份 env 內容>"
+save_env() { echo "$1" > "$ENV_FILE"; }
+if [ -f "$ROOT_DIR/tools/_claude_max_lib.sh" ]; then
+    # shellcheck disable=SC1091
+    source "$ROOT_DIR/tools/_claude_max_lib.sh"
+fi
+
 mask_key() {
     local key="$1"
     [ -z "$key" ] && echo "not set" && return
@@ -76,6 +90,8 @@ EOF
                 echo "CLAUDE_CODE_AGENT_LIST_IN_MESSAGES=false" >> "$ENV_FILE"
                 echo "CLAUDE_CODE_SIMPLE=1" >> "$ENV_FILE"
             fi
+            # 若原本是 Claude Max 模式，保留旗標（不然 start.sh 不會起 proxy）
+            [ "$CLAUDE_PROXY_MODE" = "1" ] && echo "CLAUDE_PROXY_MODE=1" >> "$ENV_FILE"
             ;;
         gemini)
             echo "CLAUDE_CODE_USE_GEMINI=1" >> "$ENV_FILE"
@@ -174,9 +190,10 @@ echo -e "  ${CYAN}1)${RESET} Change Model"
 echo -e "  ${CYAN}2)${RESET} Change API Key"
 echo -e "  ${CYAN}3)${RESET} Full Reset Config ${DIM}(Clear all settings)${RESET}"
 echo -e "  ${CYAN}4)${RESET} Cancel"
+echo -e "  ${CYAN}5)${RESET} Switch to Claude (Max Subscription) ${DIM}- OAuth, no API key (macOS/Linux); re-run to change model${RESET}"
 echo ""
 
-read -p "  Select an option (1-4): " OPTION
+read -p "  Select an option (1-5): " OPTION
 
 case "$OPTION" in
     1)
@@ -341,6 +358,14 @@ case "$OPTION" in
             exec bash "$ROOT_DIR/start.sh"
         else
             echo "  Cancelled."
+        fi
+        ;;
+    5)
+        echo ""
+        if command -v setup_claude_max >/dev/null 2>&1; then
+            setup_claude_max
+        else
+            echo -e "  ${RED}[ERROR] tools/_claude_max_lib.sh not found — cannot switch to Claude Max.${RESET}"
         fi
         ;;
     *)
