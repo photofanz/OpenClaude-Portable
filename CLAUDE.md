@@ -84,6 +84,24 @@ CLAUDE_PROXY_MODE=1                     # start.sh 與 dashboard 判斷旗標
 
 走 OpenAI-相容路徑（**不傳** `--provider`），跟 OpenRouter / DeepSeek / LM Studio / Custom 同模式 —— 原因同上一條規則。`CLAUDE_PROXY_MODE=1` 時 `start.sh` 在引擎啟動前背景起 [tools/claude-proxy/server.js](tools/claude-proxy/)（git submodule，指向 `photofanz/portable-claude-proxy`，從 `hermes-claude-proxy-v5` 衍生 — 內部用 `@anthropic-ai/claude-agent-sdk` in-process，**不 spawn CLI**），引擎結束時 kill — 跟 Ollama 同模式。Proxy log 在 `data/claude-proxy.log`，bind `127.0.0.1:3456` only。OAuth credentials 在 `data/home/.claude/.credentials.json`（HOME 已被 portable 重導涵蓋）。`claude` CLI（`@anthropic-ai/claude-code`）只用於首次 `claude login`，runtime 不需要 — 但 `start.sh` 的每日更新檢查會順手 `npm outdated @anthropic-ai/claude-code`（`--no-claude-cli-update` 可跳過）。Dashboard（[dashboard/server.mjs](dashboard/server.mjs)）的 OpenAI 路徑直接吃這個 proxy（0 改動），啟動時若偵測 `CLAUDE_PROXY_MODE=1` 且 proxy 沒在跑會 self-heal（detached spawn，dashboard 結束不會 kill proxy — 會變孤兒）；**但 agent mode 的 OpenAI tools 會被 proxy 忽略**（agent mode 對 Claude Max 沉默失效，見 README）。
 
+### OpenAI Codex 路徑（`11)` 選項，僅 macOS/Linux）
+
+[tools/_codex_lib.sh](tools/_codex_lib.sh) 的 `setup_codex()`（被 `start.sh` 與 `tools/change_provider.sh` source）寫入 `data/ai_settings.env`：
+
+```env
+AI_PROVIDER=codex
+CODEX_HOME=<absolute path to data/codex>
+CODEX_CREDENTIAL_SOURCE=oauth
+OPENAI_MODEL=gpt-5.1-codex              # 或 gpt-5.1-codex-max / gpt-5.1-codex-mini
+AI_DISPLAY_MODEL=gpt-5.1-codex
+```
+
+**不需要 proxy** — OpenClaude 引擎原生支援 `--provider codex`（`dist/cli.mjs` 有 `codexOAuthShared` / `codexCredentials` 模組）：引擎讀 `$CODEX_HOME/auth.json` 的 OAuth token、自己 refresh（`https://auth.openai.com/oauth/token`，client_id `app_EMoamEEZ73f0CkXaXp7hrann`）、用 `codex_responses` transport 直連 `https://chatgpt.com/backend-api/codex`。`start.sh` 在 `AI_PROVIDER=codex` 時只加 `--provider codex`、export `CODEX_HOME`（已由 env 載入迴圈 export），**不起任何 proxy、不需要在 trap/kill 段加東西**。
+
+`auth.json` 由 `@openai/codex` CL（`engine/node_modules/@openai/codex/bin/codex.js`，是 Node wrapper）的 `codex login` 寫入；用 `CODEX_HOME=$DATA_DIR/codex` 讓它落在資料夾內。`codex` CLI 只用於首次登入，runtime 不需要（引擎自理）— 但 `start.sh` 每日更新檢查會順手 `npm outdated @openai/codex`（`--no-codex-cli-update` 可跳過）。
+
+Dashboard（[dashboard/server.mjs](dashboard/server.mjs)）有自己的輕量 Codex 實作 `callAI_Codex` + `streamChatResponse` 的 `provider === 'codex'` 分支：讀 `$CODEX_HOME/auth.json`、token 過期就 refresh 並寫回（保留 Codex CLI 的 nested `tokens` 結構）、用 Responses API（`POST chatgpt.com/backend-api/codex/responses`，headers `Authorization Bearer` + `chatgpt-account-id` + `originator: openclaude`）。**chat 模式可用 Codex；agent 模式的 tools 不傳給 Codex**（退化成 chat，同 Claude Max）。
+
 ### Local Speed Proxy（[tools/local-proxy.js](tools/local-proxy.js)）
 
 獨立 Node HTTP server，**只**在 Ollama 路徑會被啟動：
@@ -121,6 +139,7 @@ CLAUDE_PROXY_MODE=1                     # start.sh 與 dashboard 判斷旗標
 
 - **引擎** `@gitlawb/openclaude` — `start.sh` 每次啟動自動 `npm outdated` 檢查升級，無需手動。
 - **claude CLI** `@anthropic-ai/claude-code` — `start.sh` 同模式自動檢查（`--no-claude-cli-update` 可跳過）；只在 Claude Max 路徑用。
+- **codex CLI** `@openai/codex` — `start.sh` 同模式自動檢查（`--no-codex-cli-update` 可跳過）；只在 Codex 路徑首次登入用。
 - **launcher 本體** `techjarves/OpenClaude-Portable` — `git fetch upstream && git rebase upstream/main`，手動。本地第一個 commit 是「本地改動 layer 在 upstream snapshot 之上」，所以 rebase 有共同祖先。
 - **proxy submodule** `photofanz/portable-claude-proxy`（[tools/claude-proxy/](tools/claude-proxy/)，從 `hermes-claude-proxy-v5` 衍生）— `git submodule update --remote tools/claude-proxy` 手動拉。要拿 hermes / ppcvote 上游的修補，在 portable-claude-proxy repo 內 `git fetch hermes && git cherry-pick <sha>`（remote 配置：`origin`=portable-claude-proxy、`hermes`=hermes-claude-proxy-v5）。
 

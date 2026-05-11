@@ -33,6 +33,7 @@ Everything runs strictly inside the project folder. No files are written to the 
 | **Web Dashboard** | ChatGPT-style browser UI with agent mode, tool cards, and thinking visualisation |
 | **Limitless Mode** | Optional full-autonomy mode — the agent runs without asking for approval |
 | **Claude Max Mode** | Use a $200/mo Claude subscription via OAuth + a bundled local proxy — no per-token API cost. macOS/Linux only. |
+| **OpenAI Codex Mode** | Use a ChatGPT subscription (Plus/Pro/Team) via OAuth to run Codex models (gpt-5.x-codex) — no API key, no proxy. macOS/Linux only. |
 | **Cross-Platform** | Shared `data/` folder works across Windows, Linux, and macOS |
 
 ---
@@ -55,7 +56,7 @@ chmod +x start.sh
 
 ### Pre-installing dependencies (optional)
 
-Run `./start.sh` once so it bootstraps Node.js and the engine (you can `Ctrl+C` at the provider menu), then run `./tools/preinstall.sh` to fetch the `claude` CLI and the proxy's dependencies ahead of time. After that, choosing option `10) Claude (Max Subscription)` won't pause to install anything (you still complete a one-time OAuth login during setup).
+Run `./start.sh` once so it bootstraps Node.js and the engine (you can `Ctrl+C` at the provider menu), then run `./tools/preinstall.sh` to fetch the `claude` CLI, the `@openai/codex` CLI, and the proxy's dependencies ahead of time. After that, choosing option `10) Claude (Max Subscription)` or `11) OpenAI Codex` won't pause to install anything (you still complete a one-time OAuth login during setup).
 
 ### Keeping in sync with upstream
 
@@ -104,7 +105,8 @@ OpenClaude-Multi-Platform/
 │   ├── Open_Dashboard.bat     Launch web dashboard (Windows)
 │   ├── open_dashboard.sh      Launch web dashboard (Linux/macOS)
 │   ├── _claude_max_lib.sh     Shared Claude Max wizard functions (sourced by start.sh / change_provider.sh)
-│   ├── preinstall.sh          Pre-fetch claude CLI + proxy deps (no engine launch)
+│   ├── _codex_lib.sh          Shared OpenAI Codex wizard functions (sourced by start.sh / change_provider.sh)
+│   ├── preinstall.sh          Pre-fetch claude CLI + codex CLI + proxy deps (no engine launch)
 │   ├── claude-proxy/          Local OpenAI-compatible proxy → Claude Max (git submodule → photofanz/portable-claude-proxy)
 │   └── Setup_Local_Models.bat Wrapper launcher for local model setup
 │
@@ -146,6 +148,7 @@ The menu auto-selects **Normal Mode** after 10 seconds if no key is pressed.
 | **LM Studio** | Free, local server | [lmstudio.ai](https://lmstudio.ai) |
 | **Custom OpenAI-compatible API** | Depends on provider | Provider base URL + optional API key |
 | **Claude (Max Subscription)** | Flat $200/mo | OAuth login (no API key) — macOS/Linux only |
+| **OpenAI Codex (ChatGPT Subscription)** | ChatGPT sub | OAuth login (no API key, no proxy) — macOS/Linux only |
 
 ---
 
@@ -179,6 +182,24 @@ On every launch after that, a local proxy starts on `127.0.0.1:3456` (logged to 
 - **OAuth is per-machine.** If you move the project to a different machine or CPU architecture, you may need to re-run setup and log in again (`data/home/.claude/` credentials may not transfer). Force a re-login any time by deleting `data/home/.claude/` and re-running setup.
 - **Dashboard agent mode is not supported on Claude Max.** The proxy ignores OpenAI-style `tools`, so the dashboard's *agent* mode (which calls tools) silently behaves like plain chat. Use chat mode with Claude Max, or switch to a tool-calling provider (OpenRouter, OpenAI, …) for agent mode.
 - After setup, `start.sh`'s header may show the provider as `Custom OpenAI-Compatible` (because the base URL is `localhost:3456`). That's cosmetic — it's still Claude Max.
+
+## OpenAI Codex (ChatGPT Subscription) Mode (macOS / Linux)
+
+Use your ChatGPT subscription (Plus/Pro/Team/Enterprise) to run Codex models (`gpt-5.1-codex` etc.) — no API key, **no proxy** (the OpenClaude engine connects to the Codex backend directly). Select option **`11) OpenAI Codex (ChatGPT Subscription)`** in `start.sh` (or `tools/change_provider.sh`).
+
+On first setup:
+
+1. Installs the `@openai/codex` CLI (~20–40 MB, one time — used only for the login).
+2. Opens a browser for **ChatGPT OAuth login**. Credentials are stored **inside the project** at `data/codex/auth.json` (via `CODEX_HOME`) — nothing touches `~/.codex/`.
+3. You pick a default model: `gpt-5.1-codex` (recommended), `gpt-5.1-codex-max`, or `gpt-5.1-codex-mini`.
+
+On every launch after that, the engine reads `data/codex/auth.json`, refreshes the OAuth token itself, and connects to `https://chatgpt.com/backend-api/codex` directly — **no background proxy is started** (unlike Claude Max mode).
+
+**Notes & limitations:**
+- **macOS / Linux only.** The Windows launcher (`START.bat`) does not expose this option.
+- Re-run setup any time by deleting `data/codex/auth.json` and re-running option `11`.
+- **Dashboard agent mode is limited on Codex.** The dashboard's chat mode works with Codex; agent mode (tool calls) degrades to plain chat (the Codex path doesn't pass `tools`). Use a tool-calling provider for agent mode.
+- After setup, `start.sh`'s header shows the provider as `codex`.
 
 ## Custom OpenAI-Compatible Provider
 
@@ -252,6 +273,8 @@ Proxy activity is logged silently to `data/proxy.log` — it never writes to the
 | `Claude Max proxy not responding` | Check `data/claude-proxy.log`. Common cause: OAuth credentials expired — re-run option `10` or delete `data/home/.claude/` and log in again. |
 | Port 3456 still in use after closing the dashboard | The dashboard's self-heal starts the proxy *detached*, so it survives the dashboard. Run `kill $(lsof -ti TCP:3456)` to clear it. |
 | `tools/claude-proxy` is empty | Submodule not initialised. Run `git submodule update --init tools/claude-proxy`. |
+| `Codex auth.json not found` / Codex login fails | Delete `data/codex/auth.json` and re-run option `11`. Login uses `CODEX_HOME=data/codex` so credentials stay in the project. |
+| Codex token expired in the dashboard | The dashboard refreshes the token automatically; if it persists, re-run option `11` to log in again. |
 | git repo corrupted after a sync | If this folder lives in Google Drive/Dropbox, pause the sync client during `git commit` / `rebase` / `submodule update`. Recover with `git fsck` or re-clone. |
 
 ---
