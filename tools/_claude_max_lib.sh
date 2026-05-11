@@ -6,18 +6,37 @@
 #  NODE_BIN NPM_BIN NPM_CACHE_DIR、顏色變數、save_env()。
 # =================================================================
 
-CLAUDE_CLI_BIN="$ENGINE_DIR/node_modules/@anthropic-ai/claude-code/bin/claude"
 CLAUDE_PROXY_DIR="$ROOT_DIR/tools/claude-proxy"
 CLAUDE_PROXY_PORT=3456
 
+# 解析 claude CLI 執行檔路徑：
+#   - macOS/Linux：@anthropic-ai/claude-code-<platform>-<arch>/claude（平台專屬原生 binary）
+#   - 後援：@anthropic-ai/claude-code/bin/claude.exe（套件本體 bin，npm 命名雖怪但在 Unix 也是可執行的同一隻 binary）
+_resolve_claude_cli_bin() {
+    local p a base
+    p=$(uname -s | tr '[:upper:]' '[:lower:]'); [ "$p" = "darwin" ] || p="linux"
+    a=$(uname -m); case "$a" in x86_64|amd64) a=x64;; arm64|aarch64) a=arm64;; esac
+    base="$ENGINE_DIR/node_modules/@anthropic-ai"
+    for c in "$base/claude-code-${p}-${a}/claude" "$base/claude-code/bin/claude.exe" "$base/claude-code/bin/claude"; do
+        [ -f "$c" ] && { echo "$c"; return 0; }
+    done
+    # 找不到就回傳預期路徑（讓呼叫端的 -f 檢查失敗並提示重裝）
+    echo "$base/claude-code-${p}-${a}/claude"
+}
+CLAUDE_CLI_BIN="$(_resolve_claude_cli_bin)"
+
 # claude CLI 與 proxy 依賴都裝好了嗎？
 claude_proxy_ready() {
+    CLAUDE_CLI_BIN="$(_resolve_claude_cli_bin)"
     [ -f "$CLAUDE_CLI_BIN" ] && [ -d "$CLAUDE_PROXY_DIR/node_modules/express" ]
 }
 
-# OAuth credentials 存在嗎？（HOME 已被 portable 重導到 $DATA_DIR/home）
-claude_oauth_present() {
-    [ -f "$DATA_DIR/home/.claude/.credentials.json" ]
+# 已通過 Claude 帳號認證了嗎？（claude auth status 在登入/未登入都 exit 0，
+# 所以解析 JSON 的 "loggedIn": true。HOME 用重導後的 data/home，跟 login / engine / proxy 一致）
+claude_oauth_ok() {
+    CLAUDE_CLI_BIN="$(_resolve_claude_cli_bin)"
+    [ -f "$CLAUDE_CLI_BIN" ] || return 1
+    HOME="$DATA_DIR/home" "$CLAUDE_CLI_BIN" auth status 2>/dev/null | grep -q '"loggedIn": *true'
 }
 
 # 安裝 claude CLI 與 proxy 依賴（沿用 start.sh 既有的 npm cache）
@@ -29,10 +48,12 @@ install_claude_max() {
     # 1) claude CLI（OAuth 登入用；proxy runtime 不 spawn 它，但 'claude login' 需要它）
     ( cd "$ENGINE_DIR" && NPM_CONFIG_CACHE="$NPM_CACHE_DIR" "$NPM_BIN" install @anthropic-ai/claude-code@latest \
         --no-audit --no-fund --loglevel=warn --no-bin-links --cache "$NPM_CACHE_DIR" )
+    CLAUDE_CLI_BIN="$(_resolve_claude_cli_bin)"
     if [ ! -f "$CLAUDE_CLI_BIN" ]; then
-        echo -e "  ${RED}[ERROR] claude CLI install incomplete (missing $CLAUDE_CLI_BIN).${RESET}"
+        echo -e "  ${RED}[ERROR] claude CLI install incomplete (no binary under engine/node_modules/@anthropic-ai/claude-code*).${RESET}"
         return 1
     fi
+    chmod +x "$CLAUDE_CLI_BIN" 2>/dev/null || true
 
     # 2) proxy submodule 的依賴
     if [ ! -f "$CLAUDE_PROXY_DIR/package.json" ]; then
@@ -49,33 +70,25 @@ install_claude_max() {
     echo -e "  ${GREEN}[OK] Claude CLI + proxy installed.${RESET}"
 }
 
-# 用一個子 shell，把 HOME 暫時指到 $DATA_DIR/home，跑 'claude login'
-# 完成後 OAuth credentials 落在 $DATA_DIR/home/.claude/.credentials.json
+# 用 HOME 暫時指到 $DATA_DIR/home 跑 'claude auth login --claudeai'
+# macOS 上 credentials 可能進 Keychain（同 user 可見）、Linux 上進 data/home/.claude/.credentials.json
 claude_oauth_login() {
     echo ""
     echo -e "  ${CYAN}--- CLAUDE OAUTH LOGIN ---${RESET}"
-    echo -e "  ${DIM}A browser window will open. Log in with your Claude Max account.${RESET}"
-    echo -e "  ${DIM}Credentials are saved INSIDE this folder (data/home/.claude/), not your real home.${RESET}"
+    echo -e "  ${DIM}A browser window will open. Log in with your Claude Max account (subscription).${RESET}"
+    echo -e "  ${DIM}On Linux credentials go to data/home/.claude/; on macOS they may go to the Keychain.${RESET}"
     echo ""
     read -p "  Press Enter to start login... " _
     mkdir -p "$DATA_DIR/home"
-    env HOME="$DATA_DIR/home" \
-        PATH="$ENGINE_DIR/node_modules/@anthropic-ai/claude-code/bin:$PATH" \
-        bash -c 'claude login'
+    CLAUDE_CLI_BIN="$(_resolve_claude_cli_bin)"
+    HOME="$DATA_DIR/home" "$CLAUDE_CLI_BIN" auth login --claudeai
     echo ""
-    if claude_oauth_present; then
-        echo -e "  ${GREEN}[OK] OAuth credentials saved.${RESET}"
+    if claude_oauth_ok; then
+        echo -e "  ${GREEN}[OK] Logged in.${RESET}"
         return 0
     fi
-    echo -e "  ${RED}[ERROR] Login did not produce credentials at data/home/.claude/.credentials.json${RESET}"
+    echo -e "  ${RED}[ERROR] Still not authenticated after login. Try again or run: HOME=\"$DATA_DIR/home\" \"$CLAUDE_CLI_BIN\" auth login --claudeai${RESET}"
     return 1
-}
-
-# 驗證現有 OAuth 還活著（15 秒 timeout）
-claude_oauth_verify() {
-    env HOME="$DATA_DIR/home" \
-        PATH="$ENGINE_DIR/node_modules/@anthropic-ai/claude-code/bin:$PATH" \
-        bash -c 'timeout 15 claude --print "ping" >/dev/null 2>&1'
 }
 
 setup_claude_max() {
@@ -93,12 +106,9 @@ setup_claude_max() {
     fi
 
     # 2) OAuth
-    if claude_oauth_present && claude_oauth_verify; then
-        echo -e "  ${GREEN}[OK] Existing OAuth credentials valid.${RESET}"
+    if claude_oauth_ok; then
+        echo -e "  ${GREEN}[OK] Already authenticated with Claude.${RESET}"
     else
-        if claude_oauth_present; then
-            echo -e "  ${YELLOW}[!] Existing OAuth credentials look stale — re-login needed.${RESET}"
-        fi
         claude_oauth_login || { echo -e "  ${RED}[ERROR] Setup aborted (OAuth login failed).${RESET}"; return 1; }
     fi
 

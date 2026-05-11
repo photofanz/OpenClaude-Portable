@@ -46,10 +46,14 @@ mkdir -p "$NPM_CACHE_DIR"
 echo -e "${YELLOW}[1/2] @anthropic-ai/claude-code (claude CLI, for OAuth login)${RESET}"
 ( cd "$ENGINE_DIR" && NPM_CONFIG_CACHE="$NPM_CACHE_DIR" "$NPM_BIN" install @anthropic-ai/claude-code@latest \
     --no-audit --no-fund --loglevel=warn --no-bin-links --cache "$NPM_CACHE_DIR" )
-if [ -f "$ENGINE_DIR/node_modules/@anthropic-ai/claude-code/bin/claude" ]; then
+# 平台專屬原生 binary 在 @anthropic-ai/claude-code-<platform>-<arch>/claude
+_CLIP=$PLATFORM; _CLIA=$ARCH
+if [ -f "$ENGINE_DIR/node_modules/@anthropic-ai/claude-code-${_CLIP}-${_CLIA}/claude" ] \
+   || [ -f "$ENGINE_DIR/node_modules/@anthropic-ai/claude-code/bin/claude.exe" ] \
+   || [ -f "$ENGINE_DIR/node_modules/@anthropic-ai/claude-code/bin/claude" ]; then
     echo -e "${GREEN}      OK${RESET}"
 else
-    echo -e "${RED}      install incomplete${RESET}"; exit 1
+    echo -e "${RED}      install incomplete (no claude binary found)${RESET}"; exit 1
 fi
 
 # ── 2) proxy submodule 依賴 ─────────────────────────────────
