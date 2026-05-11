@@ -177,6 +177,25 @@ export XDG_DATA_HOME="$DATA_DIR/app_data"
 export XDG_CACHE_HOME="$DATA_DIR/cache"
 mkdir -p "$CLAUDE_CONFIG_DIR" "$HOME" "$APPDATA" "$LOCALAPPDATA" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$DATA_DIR"
 
+# 修正 plugin marketplace 的 installLocation（它是寫死的絕對路徑，資料夾搬走/複製後會失效）。
+# 一律重寫成「當前位置」的 $CLAUDE_CONFIG_DIR/plugins/marketplaces/<name>。
+KNOWN_MARKETPLACES="$CLAUDE_CONFIG_DIR/plugins/known_marketplaces.json"
+if [ -f "$KNOWN_MARKETPLACES" ] && [ -x "$NODE_BIN" ]; then
+    "$NODE_BIN" -e '
+      const fs=require("fs"), p=process.argv[1], base=process.argv[2];
+      try {
+        const d=JSON.parse(fs.readFileSync(p,"utf8")); let changed=false;
+        for (const k of Object.keys(d)) {
+          if (d[k] && typeof d[k]==="object" && "installLocation" in d[k]) {
+            const want=base+"/"+k;
+            if (d[k].installLocation!==want) { d[k].installLocation=want; changed=true; }
+          }
+        }
+        if (changed) fs.writeFileSync(p, JSON.stringify(d,null,2)+"\n");
+      } catch(e) {}
+    ' "$KNOWN_MARKETPLACES" "$CLAUDE_CONFIG_DIR/plugins/marketplaces" 2>/dev/null || true
+fi
+
 # Banner
 echo ""
 echo -e "${CYAN}    ____            __        __    __        ___    ____${RESET}"
