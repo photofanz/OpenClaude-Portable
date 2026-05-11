@@ -50,6 +50,7 @@ bash tools/setup_local_models.sh     # 下載 Ollama 模型
 4. 載入或建立 `data/ai_settings.env`（每次讀取都 `tr -d '\r'` 防 CRLF — 過去吃過虧）。
 5. 顯示主選單，根據選擇 `exec` 子腳本或 `exec` 引擎。
 6. 啟動引擎時會根據 provider 加上不同的 `--provider` / `--model` 參數，詳見下節。
+7. `--setting-sources user,project,local` —— **`user` 一定要在裡面**，否則引擎不會載入 `$CLAUDE_CONFIG_DIR/skills/`（= `data/openclaude/skills/`，使用者的 64 個 skill）與 user-level agents/MCP/settings（引擎的 `getSkillDirCommands` 裡 `loadSkillsFromSkillsDir(userSkillsDir)` 被 `isSettingSourceEnabled("userSettings")` gate 住）。`HOME` 與 `CLAUDE_CONFIG_DIR` 都已重導到 `data/` 內，所以「user」指的是這份 portable copy 自己的 `data/openclaude/`，不會碰主機真實的 `~/.claude/`。（gstack 系列 skill 的 `SKILL.md` 是相對 symlink `../gstack/<skill>/SKILL.md`，指向同目錄下自包含的 `gstack/` monorepo 複本，所以可攜。）
 
 ### Provider 對應規則（**最容易踩雷的地方**）
 

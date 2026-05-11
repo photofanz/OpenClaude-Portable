@@ -929,7 +929,10 @@ elif [ -n "$GEMINI_MODEL" ]; then
 elif [ -n "$ANTHROPIC_MODEL" ]; then
     MODEL_ARGS=(--model "$ANTHROPIC_MODEL")
 fi
-SETTINGS_ARGS=(--setting-sources local)
+# user,project,local —— 含 user 才會載入 $CLAUDE_CONFIG_DIR/skills/（= data/openclaude/skills/，64 個 skill）
+# 與 user-level agents/MCP/settings。HOME 與 CLAUDE_CONFIG_DIR 都已重導到 data/ 內，所以「user」=這份
+# portable copy 自己的 data/openclaude/，不會碰到主機真實的 ~/.claude/。
+SETTINGS_ARGS=(--setting-sources user,project,local)
 
 cd "$ENGINE_DIR"
 
