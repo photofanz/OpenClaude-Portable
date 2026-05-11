@@ -499,9 +499,10 @@ function isCodexSetup(cfg) {
         || (cfg.OPENAI_BASE_URL && cfg.OPENAI_BASE_URL.includes('backend-api/codex'))
         || cfg.CODEX_CREDENTIAL_SOURCE === 'oauth';
 }
-function codexAuthPath(cfg) {
-    const home = cfg.CODEX_HOME || join(ROOT_DIR, 'data', 'codex');
-    return join(home, 'auth.json');
+function codexAuthPath(_cfg) {
+    // Always relative to the project root (cfg.CODEX_HOME in ai_settings.env may be a stale
+    // absolute path from before the folder was moved/copied).
+    return join(ROOT_DIR, 'data', 'codex', 'auth.json');
 }
 function readCodexAuth(cfg) {
     const p = codexAuthPath(cfg);

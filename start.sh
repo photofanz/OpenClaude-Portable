@@ -903,6 +903,11 @@ echo ""
 
 # Map only native providers to openclaude --provider. OpenAI-compatible
 # endpoints are selected through env vars to avoid Codex profile fallback.
+# Codex（OAuth）模式：CODEX_HOME 一律依當前資料夾位置重算（ai_settings.env 裡的可能是搬移前的舊絕對路徑）
+if [ "$CODEX_CREDENTIAL_SOURCE" = "oauth" ] || [[ "$OPENAI_BASE_URL" == *"backend-api/codex"* ]]; then
+    export CODEX_HOME="$DATA_DIR/codex"
+fi
+
 PROVIDER_ARGS=()
 case "$AI_PROVIDER" in
     anthropic) PROVIDER_ARGS=(--provider anthropic) ;;
@@ -910,7 +915,7 @@ case "$AI_PROVIDER" in
     ollama) PROVIDER_ARGS=(--provider ollama) ;;
     openai)
         # Codex（OAuth）走 provider=openai + codex backend base URL，不傳 --provider；
-        # CODEX_HOME 已由上方 env 載入迴圈 export，引擎讀 $CODEX_HOME/auth.json 的 OAuth token、自己 refresh。
+        # 引擎讀 $CODEX_HOME/auth.json 的 OAuth token、自己 refresh。
         if [[ "$OPENAI_BASE_URL" == *"integrate.api.nvidia.com"* ]]; then
             PROVIDER_ARGS=(--provider nvidia-nim)
         fi
