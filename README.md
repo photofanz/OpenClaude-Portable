@@ -32,6 +32,7 @@ Everything runs strictly inside the project folder. No files are written to the 
 | **Session Resume** | Resume any interrupted session with `RESUME.bat <session-id>` |
 | **Web Dashboard** | ChatGPT-style browser UI with agent mode, tool cards, and thinking visualisation |
 | **Limitless Mode** | Optional full-autonomy mode — the agent runs without asking for approval |
+| **Claude Max Mode** | Use a $200/mo Claude subscription via OAuth + a bundled local proxy — no per-token API cost. macOS/Linux only. |
 | **Cross-Platform** | Shared `data/` folder works across Windows, Linux, and macOS |
 
 ---
@@ -51,6 +52,26 @@ chmod +x start.sh
 ```
 
 > **First-time setup requires internet.** After that, only API calls need a connection (or none at all if you use Ollama offline mode).
+
+### Pre-installing dependencies (optional)
+
+Run `./start.sh` once so it bootstraps Node.js and the engine (you can `Ctrl+C` at the provider menu), then run `./tools/preinstall.sh` to fetch the `claude` CLI and the proxy's dependencies ahead of time. After that, choosing option `10) Claude (Max Subscription)` won't pause to install anything (you still complete a one-time OAuth login during setup).
+
+### Keeping in sync with upstream
+
+This repo tracks `techjarves/OpenClaude-Portable` as `upstream`:
+
+```bash
+git fetch upstream
+git rebase upstream/main      # or: git merge upstream/main
+```
+
+The bundled proxy is a git submodule pointing at `photofanz/portable-claude-proxy` (derived from `photofanz/hermes-claude-proxy-v5`). To pull a newer proxy:
+
+```bash
+git submodule update --remote tools/claude-proxy
+git add tools/claude-proxy && git commit -m "Update claude-proxy submodule"
+```
 
 ---
 
@@ -82,6 +103,9 @@ OpenClaude-Multi-Platform/
 │   ├── change_provider.sh     Switch AI provider or API key (Linux/macOS)
 │   ├── Open_Dashboard.bat     Launch web dashboard (Windows)
 │   ├── open_dashboard.sh      Launch web dashboard (Linux/macOS)
+│   ├── _claude_max_lib.sh     Shared Claude Max wizard functions (sourced by start.sh / change_provider.sh)
+│   ├── preinstall.sh          Pre-fetch claude CLI + proxy deps (no engine launch)
+│   ├── claude-proxy/          Local OpenAI-compatible proxy → Claude Max (git submodule → photofanz/portable-claude-proxy)
 │   └── Setup_Local_Models.bat Wrapper launcher for local model setup
 │
 └── dashboard/                 Web dashboard UI
@@ -121,6 +145,7 @@ The menu auto-selects **Normal Mode** after 10 seconds if no key is pressed.
 | **Ollama** | Free, fully offline | [ollama.com](https://ollama.com) |
 | **LM Studio** | Free, local server | [lmstudio.ai](https://lmstudio.ai) |
 | **Custom OpenAI-compatible API** | Depends on provider | Provider base URL + optional API key |
+| **Claude (Max Subscription)** | Flat $200/mo | OAuth login (no API key) — macOS/Linux only |
 
 ---
 
@@ -135,6 +160,25 @@ LM Studio works through its OpenAI-compatible local server. In LM Studio:
 5. Keep the default base URL unless you changed it: `http://localhost:1234/v1`.
 
 Then select **LM Studio** in `START.bat`, `start.sh`, or the dashboard setup wizard. The setup will check `GET /v1/models` and list the loaded model identifiers. If the check fails, confirm the LM Studio server is running and a model is loaded.
+
+## Claude Max Subscription Mode (macOS / Linux)
+
+Use your existing **Claude Max subscription** ($200/mo) instead of paying per-token API rates. Select option **`10) Claude (Max Subscription)`** in `start.sh` (or `tools/change_provider.sh`).
+
+What happens on first setup:
+
+1. Downloads the `claude` CLI and the bundled proxy's dependencies (~30–50 MB, one time).
+2. Opens a browser for **OAuth login** with your Claude Max account. Credentials are stored **inside the project** at `data/home/.claude/` — nothing touches your real home directory.
+3. You pick a default model: `claude-opus-4-7`, `claude-sonnet-4-6` (recommended), or `claude-haiku-4-5`.
+4. A random local-only API key is generated and wired up automatically — you never type an API key.
+
+On every launch after that, a local proxy starts on `127.0.0.1:3456` (logged to `data/claude-proxy.log`) and stops when the engine exits. The proxy is a git submodule at `tools/claude-proxy/` pointing at [`photofanz/portable-claude-proxy`](https://github.com/photofanz/portable-claude-proxy) (derived from [`photofanz/hermes-claude-proxy-v5`](https://github.com/photofanz/hermes-claude-proxy-v5)).
+
+**Notes & limitations:**
+- **macOS / Linux only.** The Windows launcher (`START.bat`) does not expose this option.
+- **OAuth is per-machine.** If you move the project to a different machine or CPU architecture, you may need to re-run setup and log in again (`data/home/.claude/` credentials may not transfer). Force a re-login any time by deleting `data/home/.claude/` and re-running setup.
+- **Dashboard agent mode is not supported on Claude Max.** The proxy ignores OpenAI-style `tools`, so the dashboard's *agent* mode (which calls tools) silently behaves like plain chat. Use chat mode with Claude Max, or switch to a tool-calling provider (OpenRouter, OpenAI, …) for agent mode.
+- After setup, `start.sh`'s header may show the provider as `Custom OpenAI-Compatible` (because the base URL is `localhost:3456`). That's cosmetic — it's still Claude Max.
 
 ## Custom OpenAI-Compatible Provider
 
@@ -205,6 +249,10 @@ Proxy activity is logged silently to `data/proxy.log` — it never writes to the
 | API key rejected | Verify your key at the provider's website; re-run option 4 to update it |
 | Port 3000 already in use | The dashboard is already running — open `http://localhost:3000` directly |
 | `openclaude` not found in PowerShell | Use `.\RESUME.bat <session-id>` instead of calling `openclaude` directly |
+| `Claude Max proxy not responding` | Check `data/claude-proxy.log`. Common cause: OAuth credentials expired — re-run option `10` or delete `data/home/.claude/` and log in again. |
+| Port 3456 still in use after closing the dashboard | The dashboard's self-heal starts the proxy *detached*, so it survives the dashboard. Run `kill $(lsof -ti TCP:3456)` to clear it. |
+| `tools/claude-proxy` is empty | Submodule not initialised. Run `git submodule update --init tools/claude-proxy`. |
+| git repo corrupted after a sync | If this folder lives in Google Drive/Dropbox, pause the sync client during `git commit` / `rebase` / `submodule update`. Recover with `git fsck` or re-clone. |
 
 ---
 

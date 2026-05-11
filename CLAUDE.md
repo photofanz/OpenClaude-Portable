@@ -67,6 +67,23 @@ bash tools/setup_local_models.sh     # 下載 Ollama 模型
 
 NVIDIA NIM 還會額外寫入 `CLAUDE_CODE_AGENT_LIST_IN_MESSAGES=false` 與 `CLAUDE_CODE_SIMPLE=1`：NIM 的嚴格 schema 會拒收 system-reminder 那種 content array，這個旗標會把它們轉回字串。動到 NIM 設定時不要拿掉。
 
+### Claude Max Subscription 路徑（`10)` 選項，僅 macOS/Linux）
+
+[tools/_claude_max_lib.sh](tools/_claude_max_lib.sh) 的 `setup_claude_max()`（被 `start.sh` 與 `tools/change_provider.sh` source）寫入 `data/ai_settings.env`：
+
+```env
+AI_PROVIDER=openai
+CLAUDE_CODE_USE_OPENAI=1
+OPENAI_BASE_URL=http://127.0.0.1:3456/v1
+OPENAI_API_FORMAT=chat_completions
+OPENAI_API_KEY=sk-portable-<random>     # 等同 tools/claude-proxy/.env 的 API_KEY（wizard 一次產生寫兩處）
+OPENAI_MODEL=claude-sonnet-4-6          # 或 opus-4-7 / haiku-4-5
+AI_DISPLAY_MODEL=claude-sonnet-4-6
+CLAUDE_PROXY_MODE=1                     # start.sh 與 dashboard 判斷旗標
+```
+
+走 OpenAI-相容路徑（**不傳** `--provider`），跟 OpenRouter / DeepSeek / LM Studio / Custom 同模式 —— 原因同上一條規則。`CLAUDE_PROXY_MODE=1` 時 `start.sh` 在引擎啟動前背景起 [tools/claude-proxy/server.js](tools/claude-proxy/)（git submodule，指向 `photofanz/portable-claude-proxy`，從 `hermes-claude-proxy-v5` 衍生 — 內部用 `@anthropic-ai/claude-agent-sdk` in-process，**不 spawn CLI**），引擎結束時 kill — 跟 Ollama 同模式。Proxy log 在 `data/claude-proxy.log`，bind `127.0.0.1:3456` only。OAuth credentials 在 `data/home/.claude/.credentials.json`（HOME 已被 portable 重導涵蓋）。`claude` CLI（`@anthropic-ai/claude-code`）只用於首次 `claude login`，runtime 不需要 — 但 `start.sh` 的每日更新檢查會順手 `npm outdated @anthropic-ai/claude-code`（`--no-claude-cli-update` 可跳過）。Dashboard（[dashboard/server.mjs](dashboard/server.mjs)）的 OpenAI 路徑直接吃這個 proxy（0 改動），啟動時若偵測 `CLAUDE_PROXY_MODE=1` 且 proxy 沒在跑會 self-heal（detached spawn，dashboard 結束不會 kill proxy — 會變孤兒）；**但 agent mode 的 OpenAI tools 會被 proxy 忽略**（agent mode 對 Claude Max 沉默失效，見 README）。
+
 ### Local Speed Proxy（[tools/local-proxy.js](tools/local-proxy.js)）
 
 獨立 Node HTTP server，**只**在 Ollama 路徑會被啟動：
@@ -97,3 +114,14 @@ NVIDIA NIM 還會額外寫入 `CLAUDE_CODE_AGENT_LIST_IN_MESSAGES=false` 與 `CL
 - 任何寫檔/落地的新功能 — 先確認落點在 `data/` 裡。寫到 `~/.config/`、`~/Library/`、`%APPDATA%` 真實位置等同破壞「零足跡」。
 - README 提到 `RESUME.bat <session-id>`，但這個檔案目前**並不存在**於 repo 裡；不要假設它在。如果要加，行為應對齊「以 `--resume <id>` 啟動引擎、複用既有 `data/` 設定」。
 - Dashboard 的 SSE 沒有 keepalive ping、`fetchExternal` / `streamExternal` 都寫死 60s timeout — 改長任務時記得把這個拉高。
+
+## 上游同步
+
+本 repo 是 git 控管（透過 `git init` + `git remote add upstream techjarves/OpenClaude-Portable` 接上），三個獨立上游：
+
+- **引擎** `@gitlawb/openclaude` — `start.sh` 每次啟動自動 `npm outdated` 檢查升級，無需手動。
+- **claude CLI** `@anthropic-ai/claude-code` — `start.sh` 同模式自動檢查（`--no-claude-cli-update` 可跳過）；只在 Claude Max 路徑用。
+- **launcher 本體** `techjarves/OpenClaude-Portable` — `git fetch upstream && git rebase upstream/main`，手動。本地第一個 commit 是「本地改動 layer 在 upstream snapshot 之上」，所以 rebase 有共同祖先。
+- **proxy submodule** `photofanz/portable-claude-proxy`（[tools/claude-proxy/](tools/claude-proxy/)，從 `hermes-claude-proxy-v5` 衍生）— `git submodule update --remote tools/claude-proxy` 手動拉。要拿 hermes / ppcvote 上游的修補，在 portable-claude-proxy repo 內 `git fetch hermes && git cherry-pick <sha>`（remote 配置：`origin`=portable-claude-proxy、`hermes`=hermes-claude-proxy-v5）。
+
+`engine/`、`data/`、`tools/claude-proxy/node_modules/`、`tools/claude-proxy/.env`、舊的 `openclaude-claude-proxy/` 都在 `.gitignore` 排除清單內 — git 操作不會碰它們。**注意：本 repo 若放在 Google Drive / Dropbox 同步路徑下，做 git commit / rebase / submodule update 時建議暫停同步**，避免 `.git/objects/` 同步到一半損毀。
