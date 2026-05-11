@@ -13,3 +13,6 @@
 # ── Node.js ───────────────────────────────────────────────────────
 node_modules/
 npm-debug.log*
+
+# Superseded local copy of the proxy (replaced by tools/claude-proxy submodule)
+/openclaude-claude-proxy/
