@@ -96,6 +96,9 @@ EOF
             fi
             # 若原本是 Claude Max 模式，保留旗標（不然 start.sh 不會起 proxy）
             [ "$CLAUDE_PROXY_MODE" = "1" ] && echo "CLAUDE_PROXY_MODE=1" >> "$ENV_FILE"
+            # 若原本是 Codex 模式，保留 OAuth credential 路徑（不然引擎找不到 auth.json）
+            [ -n "$CODEX_HOME" ] && echo "CODEX_HOME=$CODEX_HOME" >> "$ENV_FILE"
+            [ "$CODEX_CREDENTIAL_SOURCE" = "oauth" ] && echo "CODEX_CREDENTIAL_SOURCE=oauth" >> "$ENV_FILE"
             ;;
         gemini)
             echo "CLAUDE_CODE_USE_GEMINI=1" >> "$ENV_FILE"
@@ -181,7 +184,8 @@ load_config
 # Show current status
 PROVIDER_TYPE="$AI_PROVIDER"
 if [ "$AI_PROVIDER" = "openai" ]; then
-    if [[ "$OPENAI_BASE_URL" == *"openrouter"* ]]; then PROVIDER_TYPE="openrouter"
+    if [[ "$OPENAI_BASE_URL" == *"backend-api/codex"* ]] || [ "$CODEX_CREDENTIAL_SOURCE" = "oauth" ]; then PROVIDER_TYPE="codex"
+    elif [[ "$OPENAI_BASE_URL" == *"openrouter"* ]]; then PROVIDER_TYPE="openrouter"
     elif [[ "$OPENAI_BASE_URL" == *"integrate.api.nvidia.com"* ]]; then PROVIDER_TYPE="nvidia"
     elif [[ "$OPENAI_BASE_URL" == *"api.deepseek.com"* ]]; then PROVIDER_TYPE="deepseek"
     elif [[ "$OPENAI_BASE_URL" == *"localhost:1234"* ]]; then PROVIDER_TYPE="lmstudio"
