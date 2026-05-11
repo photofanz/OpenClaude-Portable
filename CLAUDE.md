@@ -86,21 +86,26 @@ CLAUDE_PROXY_MODE=1                     # start.sh 與 dashboard 判斷旗標
 
 ### OpenAI Codex 路徑（`11)` 選項，僅 macOS/Linux）
 
+**「codex」不是 `--provider` 值** —— 引擎的 valid providers 清單裡沒有 `codex`。它是 OpenClaude 的一個 *profile*，實際走法是 `provider=openai` + Codex 後端 base URL + OAuth credentials（從 `auth.json` via `CODEX_HOME`）+ placeholder key `codex-oauth-token-for-validation`（引擎自己用的標記）。base URL 是 codex 後端 → 引擎自動用 `codex_responses` transport。
+
 [tools/_codex_lib.sh](tools/_codex_lib.sh) 的 `setup_codex()`（被 `start.sh` 與 `tools/change_provider.sh` source）寫入 `data/ai_settings.env`：
 
 ```env
-AI_PROVIDER=codex
+AI_PROVIDER=openai
+CLAUDE_CODE_USE_OPENAI=1
+OPENAI_BASE_URL=https://chatgpt.com/backend-api/codex
+OPENAI_API_KEY=codex-oauth-token-for-validation     # 引擎的 codex OAuth placeholder；實際請求用 auth.json 的 access token
+OPENAI_MODEL=gpt-5.3-codex             # 或 gpt-5.3-codex-spark / gpt-5.5 / gpt-5.4 / gpt-5.2-codex / gpt-5.1-codex-max / gpt-5.1-codex-mini / gpt-5.5-mini（引擎預設 codexplan = gpt-5.5 high reasoning；以 `getCodexModelOptions()` 為準）
+AI_DISPLAY_MODEL=gpt-5.3-codex
 CODEX_HOME=<absolute path to data/codex>
 CODEX_CREDENTIAL_SOURCE=oauth
-OPENAI_MODEL=gpt-5.1-codex              # 或 gpt-5.1-codex-max / gpt-5.1-codex-mini
-AI_DISPLAY_MODEL=gpt-5.1-codex
 ```
 
-**不需要 proxy** — OpenClaude 引擎原生支援 `--provider codex`（`dist/cli.mjs` 有 `codexOAuthShared` / `codexCredentials` 模組）：引擎讀 `$CODEX_HOME/auth.json` 的 OAuth token、自己 refresh（`https://auth.openai.com/oauth/token`，client_id `app_EMoamEEZ73f0CkXaXp7hrann`）、用 `codex_responses` transport 直連 `https://chatgpt.com/backend-api/codex`。`start.sh` 在 `AI_PROVIDER=codex` 時只加 `--provider codex`、export `CODEX_HOME`（已由 env 載入迴圈 export），**不起任何 proxy、不需要在 trap/kill 段加東西**。
+**不需要 proxy** — OpenClaude 引擎原生支援 Codex OAuth（`dist/cli.mjs` 有 `codexOAuthShared` / `codexCredentials` 模組）：引擎讀 `$CODEX_HOME/auth.json` 的 OAuth token、自己 refresh（`https://auth.openai.com/oauth/token`，client_id `app_EMoamEEZ73f0CkXaXp7hrann`）、用 `codex_responses` transport 直連 `https://chatgpt.com/backend-api/codex`。`start.sh` 因為 `AI_PROVIDER=openai` 走 OpenAI-相容路徑（**不傳** `--provider`，同 OpenRouter/DeepSeek/LM Studio/Custom）；`CODEX_HOME` 已由 env 載入迴圈 export。**不起任何 proxy、不需要在 trap/kill 段加東西**。（header 會顯示 `Custom OpenAI-Compatible` — 純顯示問題。）
 
-`auth.json` 由 `@openai/codex` CL（`engine/node_modules/@openai/codex/bin/codex.js`，是 Node wrapper）的 `codex login` 寫入；用 `CODEX_HOME=$DATA_DIR/codex` 讓它落在資料夾內。`codex` CLI 只用於首次登入，runtime 不需要（引擎自理）— 但 `start.sh` 每日更新檢查會順手 `npm outdated @openai/codex`（`--no-codex-cli-update` 可跳過）。
+`auth.json` 由 `@openai/codex` CLI 的 `codex login` 寫入（入口 `engine/node_modules/@openai/codex/bin/codex.js` 是 Node wrapper，用 `$NODE_BIN` 跑；平台原生 binary 在 `@openai/codex-<plat>-<arch>/`）；用 `CODEX_HOME=$DATA_DIR/codex` 讓 credentials 落在資料夾內。`codex` CLI 只用於首次登入，runtime 不需要（引擎自理）— 但 `start.sh` 每日更新檢查會順手 `npm outdated @openai/codex`（`--no-codex-cli-update` 可跳過）。
 
-Dashboard（[dashboard/server.mjs](dashboard/server.mjs)）有自己的輕量 Codex 實作 `callAI_Codex` + `streamChatResponse` 的 `provider === 'codex'` 分支：讀 `$CODEX_HOME/auth.json`、token 過期就 refresh 並寫回（保留 Codex CLI 的 nested `tokens` 結構）、用 Responses API（`POST chatgpt.com/backend-api/codex/responses`，headers `Authorization Bearer` + `chatgpt-account-id` + `originator: openclaude`）。**chat 模式可用 Codex；agent 模式的 tools 不傳給 Codex**（退化成 chat，同 Claude Max）。
+Dashboard（[dashboard/server.mjs](dashboard/server.mjs)）有自己的輕量 Codex 實作 `callAI_Codex` + `streamChatResponse` 的 Codex 分支（用 `isCodexSetup(cfg)` 偵測：codex 後端 URL / `CODEX_CREDENTIAL_SOURCE=oauth` / 舊式 `AI_PROVIDER=codex`，**在 openai 分支之前判斷**）：讀 `$CODEX_HOME/auth.json`、token 過期就 refresh 並寫回（保留 Codex CLI 的 nested `tokens` 結構）、用 Responses API（`POST chatgpt.com/backend-api/codex/responses`，headers `Authorization Bearer` + `chatgpt-account-id` + `originator: openclaude`）。**chat 模式可用 Codex；agent 模式的 tools 不傳給 Codex**（退化成 chat，同 Claude Max）。
 
 ### Local Speed Proxy（[tools/local-proxy.js](tools/local-proxy.js)）
 

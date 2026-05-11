@@ -33,7 +33,7 @@ Everything runs strictly inside the project folder. No files are written to the 
 | **Web Dashboard** | ChatGPT-style browser UI with agent mode, tool cards, and thinking visualisation |
 | **Limitless Mode** | Optional full-autonomy mode — the agent runs without asking for approval |
 | **Claude Max Mode** | Use a $200/mo Claude subscription via OAuth + a bundled local proxy — no per-token API cost. macOS/Linux only. |
-| **OpenAI Codex Mode** | Use a ChatGPT subscription (Plus/Pro/Team) via OAuth to run Codex models (gpt-5.x-codex) — no API key, no proxy. macOS/Linux only. |
+| **OpenAI Codex Mode** | Use a ChatGPT subscription (Plus/Pro/Team) via OAuth to run Codex / GPT-5.x models — no API key, no proxy. macOS/Linux only. |
 | **Cross-Platform** | Shared `data/` folder works across Windows, Linux, and macOS |
 
 ---
@@ -185,13 +185,13 @@ On every launch after that, a local proxy starts on `127.0.0.1:3456` (logged to 
 
 ## OpenAI Codex (ChatGPT Subscription) Mode (macOS / Linux)
 
-Use your ChatGPT subscription (Plus/Pro/Team/Enterprise) to run Codex models (`gpt-5.1-codex` etc.) — no API key, **no proxy** (the OpenClaude engine connects to the Codex backend directly). Select option **`11) OpenAI Codex (ChatGPT Subscription)`** in `start.sh` (or `tools/change_provider.sh`).
+Use your ChatGPT subscription (Plus/Pro/Team/Enterprise) to run Codex / GPT-5.x models (`gpt-5.3-codex`, `gpt-5.5`, …) — no API key, **no proxy** (the OpenClaude engine connects to the Codex backend directly). Select option **`11) OpenAI Codex (ChatGPT Subscription)`** in `start.sh` (or `tools/change_provider.sh`).
 
 On first setup:
 
 1. Installs the `@openai/codex` CLI (~20–40 MB, one time — used only for the login).
 2. Opens a browser for **ChatGPT OAuth login**. Credentials are stored **inside the project** at `data/codex/auth.json` (via `CODEX_HOME`) — nothing touches `~/.codex/`.
-3. You pick a default model: `gpt-5.1-codex` (recommended), `gpt-5.1-codex-max`, or `gpt-5.1-codex-mini`.
+3. You pick a default model: `gpt-5.3-codex` (recommended, newest Codex model), `gpt-5.3-codex-spark` (fast), `gpt-5.5` (newest general), or a custom one (`gpt-5.4`, `gpt-5.2-codex`, `gpt-5.1-codex-max`, `gpt-5.1-codex-mini`, `gpt-5.5-mini`, …).
 
 On every launch after that, the engine reads `data/codex/auth.json`, refreshes the OAuth token itself, and connects to `https://chatgpt.com/backend-api/codex` directly — **no background proxy is started** (unlike Claude Max mode).
 

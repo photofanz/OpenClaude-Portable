@@ -329,16 +329,16 @@ case "$OPTION" in
                 [ -n "$NEW_MODEL" ] && OPENAI_MODEL="$NEW_MODEL" && AI_DISPLAY_MODEL="$NEW_MODEL"
                 ;;
             codex)
-                echo -e "  ${CYAN}1)${RESET} gpt-5.1-codex"
-                echo -e "  ${CYAN}2)${RESET} gpt-5.1-codex-max"
-                echo -e "  ${CYAN}3)${RESET} gpt-5.1-codex-mini"
-                echo -e "  ${CYAN}4)${RESET} Custom..."
+                echo -e "  ${CYAN}1)${RESET} gpt-5.3-codex       ${DIM}(newest Codex, recommended)${RESET}"
+                echo -e "  ${CYAN}2)${RESET} gpt-5.3-codex-spark ${DIM}(fast tool loops)${RESET}"
+                echo -e "  ${CYAN}3)${RESET} gpt-5.5             ${DIM}(newest general, engine default)${RESET}"
+                echo -e "  ${CYAN}4)${RESET} Custom...           ${DIM}(gpt-5.4 / gpt-5.2-codex / gpt-5.1-codex-max / gpt-5.1-codex-mini / gpt-5.5-mini)${RESET}"
                 read -p "  Select (1-4) [Enter for 1]: " _CMSEL
                 case "$_CMSEL" in
-                    2) NEW_MODEL="gpt-5.1-codex-max" ;;
-                    3) NEW_MODEL="gpt-5.1-codex-mini" ;;
+                    2) NEW_MODEL="gpt-5.3-codex-spark" ;;
+                    3) NEW_MODEL="gpt-5.5" ;;
                     4) read -p "  Enter custom Codex model string: " NEW_MODEL ;;
-                    *) NEW_MODEL="gpt-5.1-codex" ;;
+                    *) NEW_MODEL="gpt-5.3-codex" ;;
                 esac
                 [ -n "$NEW_MODEL" ] && OPENAI_MODEL="$NEW_MODEL" && AI_DISPLAY_MODEL="$NEW_MODEL"
                 ;;

@@ -87,17 +87,19 @@ setup_codex() {
         codex_oauth_login || { echo -e "  ${RED}[ERROR] Setup aborted (Codex OAuth login failed).${RESET}"; return 1; }
     fi
 
-    # 3) 模型三選一（對齊引擎 getCodexModelOptions 的 codex 系列）
+    # 3) 選模型（對齊引擎 getCodexModelOptions 的當前清單；引擎預設是 codexplan = gpt-5.5 high reasoning）
     echo ""
     echo -e "  ${CYAN}Choose default model:${RESET}"
-    echo -e "    ${CYAN}1)${RESET} gpt-5.1-codex       ${DIM}- balanced (recommended)${RESET}"
-    echo -e "    ${CYAN}2)${RESET} gpt-5.1-codex-max   ${DIM}- highest quality${RESET}"
-    echo -e "    ${CYAN}3)${RESET} gpt-5.1-codex-mini  ${DIM}- fastest / lightest${RESET}"
-    read -p "  Select (1-3) [Enter for 1]: " _MSEL
+    echo -e "    ${CYAN}1)${RESET} gpt-5.3-codex        ${DIM}- newest Codex model, high reasoning (recommended)${RESET}"
+    echo -e "    ${CYAN}2)${RESET} gpt-5.3-codex-spark  ${DIM}- fast Codex variant for tool loops${RESET}"
+    echo -e "    ${CYAN}3)${RESET} gpt-5.5              ${DIM}- newest general GPT-5.5, high reasoning (engine default)${RESET}"
+    echo -e "    ${CYAN}4)${RESET} Custom...            ${DIM}- e.g. gpt-5.4, gpt-5.2-codex, gpt-5.1-codex-max, gpt-5.1-codex-mini, gpt-5.5-mini${RESET}"
+    read -p "  Select (1-4) [Enter for 1]: " _MSEL
     case "$_MSEL" in
-        2) CODEX_MODEL="gpt-5.1-codex-max" ;;
-        3) CODEX_MODEL="gpt-5.1-codex-mini" ;;
-        *) CODEX_MODEL="gpt-5.1-codex" ;;
+        2) CODEX_MODEL="gpt-5.3-codex-spark" ;;
+        3) CODEX_MODEL="gpt-5.5" ;;
+        4) read -p "  Enter model name: " CODEX_MODEL; [ -z "$CODEX_MODEL" ] && CODEX_MODEL="gpt-5.3-codex" ;;
+        *) CODEX_MODEL="gpt-5.3-codex" ;;
     esac
 
     # 4) 寫 ai_settings.env
