@@ -14,5 +14,9 @@
 node_modules/
 npm-debug.log*
 
+# ── Claude Max proxy (submodule) runtime artefacts ────────────────
+# (node_modules/ already covered above; .env holds the generated proxy token)
+/tools/claude-proxy/.env
+
 # Superseded local copy of the proxy (replaced by tools/claude-proxy submodule)
 /openclaude-claude-proxy/

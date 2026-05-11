@@ -1,0 +1,4 @@
+[submodule "tools/claude-proxy"]
+	path = tools/claude-proxy
+	url = https://github.com/photofanz/portable-claude-proxy.git
+	branch = main
