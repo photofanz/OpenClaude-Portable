@@ -461,12 +461,137 @@ async function callAI_Gemini(messages, cfg, includeTools = true) {
     };
 }
 
+// ─── Codex (ChatGPT subscription, OAuth) ─────────────────────
+// 引擎走 --provider codex 直連 https://chatgpt.com/backend-api/codex/responses（OpenAI Responses API）。
+// Dashboard 自己做一份輕量版：讀 CODEX_HOME/auth.json 的 OAuth token、過期就 refresh、用 Responses API 對話。
+// 注意：tools / function-calling 不支援（agent mode 對 Codex 退化成 chat）。
+
+const CODEX_OAUTH_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
+const CODEX_OAUTH_SCOPE = 'openid profile email offline_access api.connectors.read api.connectors.invoke';
+const CODEX_RESPONSES_URL = 'https://chatgpt.com/backend-api/codex/responses';
+const CODEX_TOKEN_URL = 'https://auth.openai.com/oauth/token';
+
+function decodeJwtPayload(token) {
+    try {
+        const part = String(token).split('.')[1];
+        if (!part) return null;
+        const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+        return JSON.parse(Buffer.from(b64, 'base64').toString('utf-8'));
+    } catch { return null; }
+}
+function jwtExpMs(token) {
+    const p = decodeJwtPayload(token);
+    return p && typeof p.exp === 'number' ? p.exp * 1000 : null;
+}
+function parseChatgptAccountId(idToken, accessToken) {
+    for (const t of [idToken, accessToken]) {
+        const p = decodeJwtPayload(t);
+        if (!p) continue;
+        const nested = p['https://api.openai.com/auth'];
+        const id = (nested && nested.chatgpt_account_id) || p.chatgpt_account_id;
+        if (id) return String(id);
+    }
+    return undefined;
+}
+function codexAuthPath(cfg) {
+    const home = cfg.CODEX_HOME || join(ROOT_DIR, 'data', 'codex');
+    return join(home, 'auth.json');
+}
+function readCodexAuth(cfg) {
+    const p = codexAuthPath(cfg);
+    if (!existsSync(p)) throw new Error(`Codex auth.json not found at ${p} — run setup (option 11) to log in.`);
+    const raw = JSON.parse(readFileSync(p, 'utf-8'));
+    const tokens = raw.tokens || raw;
+    const accessToken = tokens.access_token || raw.access_token || raw.openai_api_key || raw.OPENAI_API_KEY;
+    if (!accessToken) throw new Error('Codex auth.json has no access token.');
+    return {
+        path: p, raw,
+        accessToken,
+        refreshToken: tokens.refresh_token || raw.refresh_token,
+        idToken: tokens.id_token || raw.id_token,
+        accountId: tokens.account_id || raw.account_id || parseChatgptAccountId(tokens.id_token || raw.id_token, accessToken),
+    };
+}
+async function ensureFreshCodexToken(cfg) {
+    let auth = readCodexAuth(cfg);
+    const expMs = jwtExpMs(auth.accessToken);
+    if (expMs && expMs - Date.now() > 60_000) return auth;       // still valid
+    if (!auth.refreshToken) return auth;                          // can't refresh — let the request fail loudly
+    const body = JSON.stringify({
+        grant_type: 'refresh_token', client_id: CODEX_OAUTH_CLIENT_ID,
+        refresh_token: auth.refreshToken, scope: CODEX_OAUTH_SCOPE,
+    });
+    const resp = await fetchExternal(CODEX_TOKEN_URL, {
+        'Content-Type': 'application/json', 'Content-Length': String(Buffer.byteLength(body)),
+    }, body, 'POST');
+    let data;
+    try { data = JSON.parse(resp.data); } catch { throw new Error('Codex token refresh: invalid response ' + resp.data.slice(0, 200)); }
+    if (!data.access_token) throw new Error('Codex token refresh failed: ' + (data.error_description || data.error || resp.data.slice(0, 200)));
+    // write back, preserving the nested-tokens shape the Codex CLI uses
+    const updated = { ...auth.raw };
+    updated.tokens = { ...(auth.raw.tokens || {}),
+        access_token: data.access_token,
+        id_token: data.id_token || (auth.raw.tokens && auth.raw.tokens.id_token) || auth.idToken,
+        refresh_token: data.refresh_token || auth.refreshToken,
+        account_id: (auth.raw.tokens && auth.raw.tokens.account_id) || auth.accountId,
+    };
+    updated.last_refresh = new Date().toISOString();
+    try { writeFileSync(auth.path, JSON.stringify(updated, null, 2), 'utf-8'); } catch {}
+    return readCodexAuth(cfg);
+}
+// dashboard messages → Responses API input items
+function messagesToCodexInput(messages) {
+    let instructions = '';
+    const input = [];
+    for (const m of messages) {
+        const text = typeof m.content === 'string' ? m.content
+            : Array.isArray(m.content) ? m.content.map(c => c.text || '').join('\n') : String(m.content ?? '');
+        if (m.role === 'system') { instructions += (instructions ? '\n' : '') + text; continue; }
+        const role = m.role === 'assistant' ? 'assistant' : 'user';
+        const partType = role === 'assistant' ? 'output_text' : 'input_text';
+        input.push({ type: 'message', role, content: [{ type: partType, text }] });
+    }
+    if (input.length === 0) input.push({ type: 'message', role: 'user', content: [{ type: 'input_text', text: '' }] });
+    return { instructions, input };
+}
+function codexHeaders(auth) {
+    const h = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${auth.accessToken}`, 'originator': 'openclaude' };
+    if (auth.accountId) h['chatgpt-account-id'] = auth.accountId;
+    return h;
+}
+function buildCodexBody(messages, cfg, stream) {
+    const { instructions, input } = messagesToCodexInput(messages);
+    const body = { model: cfg.OPENAI_MODEL || cfg.AI_DISPLAY_MODEL || 'gpt-5.1-codex', input, store: false, stream: !!stream };
+    if (instructions) body.instructions = instructions;
+    return body;
+}
+// non-streaming (for agent mode — tools ignored, behaves like plain chat)
+async function callAI_Codex(messages, cfg, _includeTools = true) {
+    const auth = await ensureFreshCodexToken(cfg);
+    const body = JSON.stringify(buildCodexBody(messages, cfg, false));
+    const headers = { ...codexHeaders(auth), 'Content-Length': String(Buffer.byteLength(body)) };
+    const resp = await fetchExternal(CODEX_RESPONSES_URL, headers, body, 'POST');
+    let data;
+    try { data = JSON.parse(resp.data); } catch { throw new Error('Codex API: invalid response ' + resp.data.slice(0, 300)); }
+    if (data.error) throw new Error('Codex API error: ' + (data.error.message || JSON.stringify(data.error)));
+    // Responses API: data.output is an array of items; collect output_text
+    let text = '';
+    for (const item of (data.output || [])) {
+        for (const part of (item.content || [])) {
+            if (part.type === 'output_text' && part.text) text += part.text;
+        }
+    }
+    if (!text && typeof data.output_text === 'string') text = data.output_text;
+    return { content: text, toolCalls: [], rawMessage: { role: 'assistant', content: text } };
+}
+
 // Unified caller
 async function callAI(messages, cfg, includeTools = true) {
     const provider = cfg.AI_PROVIDER;
     if (provider === 'openai' || provider === 'ollama') return callAI_OpenAI(messages, cfg, includeTools);
     if (provider === 'anthropic') return callAI_Anthropic(messages, cfg, includeTools);
     if (provider === 'gemini') return callAI_Gemini(messages, cfg, includeTools);
+    if (provider === 'codex') return callAI_Codex(messages, cfg, includeTools);
     throw new Error(`Unsupported provider for agent mode: ${provider}`);
 }
 
@@ -706,6 +831,40 @@ async function streamChatResponse(messages, cfg, res) {
             },
             () => { sendSSE({ type: 'done', fullText }); res.end(); }
         );
+        return fullText;
+    }
+
+    // ── Codex (ChatGPT subscription) ──────────────────────────
+    if (provider === 'codex') {
+        let fullText = '';
+        try {
+            const auth = await ensureFreshCodexToken(cfg);
+            const body = JSON.stringify(buildCodexBody(messages, cfg, true));
+            const headers = { ...codexHeaders(auth), 'Content-Length': String(Buffer.byteLength(body)) };
+            await streamExternal(CODEX_RESPONSES_URL, headers, body,
+                (chunk) => {
+                    chunk.split('\n').forEach(line => {
+                        if (!line.startsWith('data:')) return;
+                        const raw = line.slice(5).trim();
+                        if (!raw || raw === '[DONE]') return;
+                        try {
+                            const ev = JSON.parse(raw);
+                            const t = ev.type || ev.event;
+                            if (t === 'response.output_text.delta' && ev.delta) {
+                                fullText += ev.delta; sendSSE({ type: 'delta', content: ev.delta });
+                            } else if (t === 'response.failed' || t === 'error') {
+                                const msg = ev.response?.error?.message || ev.error?.message || 'Codex request failed';
+                                sendSSE({ type: 'error', content: msg });
+                            }
+                        } catch {}
+                    });
+                },
+                () => { sendSSE({ type: 'done', fullText }); res.end(); }
+            );
+        } catch (e) {
+            sendSSE({ type: 'error', content: `Codex error: ${e.message}` });
+            res.end();
+        }
         return fullText;
     }
 
