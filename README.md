@@ -60,11 +60,19 @@ Run `./start.sh` once so it bootstraps Node.js and the engine (you can `Ctrl+C` 
 
 ### Keeping in sync with upstream
 
-This repo tracks `techjarves/OpenClaude-Portable` as `upstream`:
+Remotes: `origin` = your fork (`photofanz/OpenClaude-Portable`), `upstream` = the original (`techjarves/OpenClaude-Portable`).
 
 ```bash
+# push your own changes to your fork
+git push                                 # (origin/main)
+
+# pull updates from the original launcher
 git fetch upstream
-git rebase upstream/main      # or: git merge upstream/main
+git rebase upstream/main                  # your commits layer on top — there's a common ancestor
+git push --force-with-lease              # rebase rewrote history → force-push to your fork
+
+# fresh clone of your fork → also need the proxy submodule
+git submodule update --init tools/claude-proxy
 ```
 
 The bundled proxy is a git submodule pointing at `photofanz/portable-claude-proxy` (derived from `photofanz/hermes-claude-proxy-v5`). To pull a newer proxy:
@@ -72,7 +80,10 @@ The bundled proxy is a git submodule pointing at `photofanz/portable-claude-prox
 ```bash
 git submodule update --remote tools/claude-proxy
 git add tools/claude-proxy && git commit -m "Update claude-proxy submodule"
+git push
 ```
+
+> If this folder lives in a cloud-sync path (Google Drive / Dropbox), pause the sync client while running `git commit` / `rebase` / `submodule update` — a half-synced `.git/objects/` can corrupt the repo.
 
 ---
 

@@ -141,12 +141,12 @@ Dashboard（[dashboard/server.mjs](dashboard/server.mjs)）有自己的輕量 Co
 
 ## 上游同步
 
-本 repo 是 git 控管（透過 `git init` + `git remote add upstream techjarves/OpenClaude-Portable` 接上），三個獨立上游：
+本 repo 是 git 控管。Remote 配置：`origin` = `photofanz/OpenClaude-Portable`（使用者的 fork，自己的 commit 推這裡）、`upstream` = `techjarves/OpenClaude-Portable`（原始 launcher）。三個獨立上游：
 
 - **引擎** `@gitlawb/openclaude` — `start.sh` 每次啟動自動 `npm outdated` 檢查升級，無需手動。
 - **claude CLI** `@anthropic-ai/claude-code` — `start.sh` 同模式自動檢查（`--no-claude-cli-update` 可跳過）；只在 Claude Max 路徑用。
 - **codex CLI** `@openai/codex` — `start.sh` 同模式自動檢查（`--no-codex-cli-update` 可跳過）；只在 Codex 路徑首次登入用。
-- **launcher 本體** `techjarves/OpenClaude-Portable` — `git fetch upstream && git rebase upstream/main`，手動。本地第一個 commit 是「本地改動 layer 在 upstream snapshot 之上」，所以 rebase 有共同祖先。
-- **proxy submodule** `photofanz/portable-claude-proxy`（[tools/claude-proxy/](tools/claude-proxy/)，從 `hermes-claude-proxy-v5` 衍生）— `git submodule update --remote tools/claude-proxy` 手動拉。要拿 hermes / ppcvote 上游的修補，在 portable-claude-proxy repo 內 `git fetch hermes && git cherry-pick <sha>`（remote 配置：`origin`=portable-claude-proxy、`hermes`=hermes-claude-proxy-v5）。
+- **launcher 本體** `techjarves/OpenClaude-Portable` — `git fetch upstream && git rebase upstream/main`（本地第一個 commit 是「本地改動 layer 在 upstream snapshot 之上」，rebase 有共同祖先），rebase 改寫了歷史 → `git push --force-with-lease` 推回 fork。手動。
+- **proxy submodule** `photofanz/portable-claude-proxy`（[tools/claude-proxy/](tools/claude-proxy/)，從 `hermes-claude-proxy-v5` 衍生）— `git submodule update --remote tools/claude-proxy && git add tools/claude-proxy && git commit && git push` 手動拉。要拿 hermes / ppcvote 上游的修補，在 portable-claude-proxy repo 內 `git fetch hermes && git cherry-pick <sha>`（那個 repo 的 remote 配置：`origin`=portable-claude-proxy、`hermes`=hermes-claude-proxy-v5）。Fresh clone fork 後要 `git submodule update --init tools/claude-proxy`。
 
 `engine/`、`data/`、`tools/claude-proxy/node_modules/`、`tools/claude-proxy/.env`、舊的 `openclaude-claude-proxy/` 都在 `.gitignore` 排除清單內 — git 操作不會碰它們。**注意：本 repo 若放在 Google Drive / Dropbox 同步路徑下，做 git commit / rebase / submodule update 時建議暫停同步**，避免 `.git/objects/` 同步到一半損毀。
