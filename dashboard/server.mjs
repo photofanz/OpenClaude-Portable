@@ -68,7 +68,7 @@ async function fetchExternal(url, headers = {}, body = null, method = 'GET') {
             res.on('end', () => resolve({ status: res.statusCode, data, headers: res.headers }));
         });
         req.on('error', reject);
-        req.setTimeout(60000, () => { req.destroy(); reject(new Error('Timeout')); });
+        req.setTimeout(120000, () => { req.destroy(); reject(new Error('Timeout')); });
         if (body) req.write(body);
         req.end();
     });
@@ -83,7 +83,8 @@ async function streamExternal(url, headers, body, onChunk, onEnd) {
             res.on('error', reject);
         });
         req.on('error', reject);
-        req.setTimeout(60000, () => { req.destroy(); reject(new Error('Timeout')); });
+        // streamed responses (incl. reasoning models with a long pause before the first delta) — 3 min socket timeout
+        req.setTimeout(180000, () => { req.destroy(); reject(new Error('Timeout')); });
         req.write(body);
         req.end();
     });
@@ -600,28 +601,51 @@ function buildCodexBody(messages, cfg, { stream = false, includeTools = false } 
     if (includeTools) { body.tools = toolsForCodexResponses(); body.tool_choice = 'auto'; }
     return body;
 }
-// non-streaming (used by agent mode). includeTools → function-calling supported via the Responses API.
+// Used by agent mode. The chatgpt.com/backend-api/codex/responses backend MANDATES stream:true,
+// so we stream the request but consume the SSE synchronously and assemble the full result
+// (text + function_call items) from the `response.completed` event's output[].
 async function callAI_Codex(messages, cfg, includeTools = true) {
     const auth = await ensureFreshCodexToken(cfg);
-    const bodyObj = buildCodexBody(messages, cfg, { stream: false, includeTools });
+    const bodyObj = buildCodexBody(messages, cfg, { stream: true, includeTools });   // backend requires stream:true
     const body = JSON.stringify(bodyObj);
     const headers = { ...codexHeaders(auth), 'Content-Length': String(Buffer.byteLength(body)) };
-    console.log(`[codex] POST ${CODEX_RESPONSES_URL} model=${bodyObj.model} inputItems=${bodyObj.input.length} tools=${bodyObj.tools ? bodyObj.tools.length : 0} acct=${auth.accountId ? 'y' : 'n'} tokLen=${(auth.accessToken || '').length}`);
-    const resp = await fetchExternal(CODEX_RESPONSES_URL, headers, body, 'POST');
-    console.log(`[codex] <- HTTP ${resp.status}; body[0:600]=${String(resp.data).slice(0, 600)}`);
-    let data;
-    try { data = JSON.parse(resp.data); } catch { throw new Error(`Codex API: non-JSON response (HTTP ${resp.status}): ` + String(resp.data).slice(0, 400)); }
-    if (resp.status >= 400 || data.error || (data.type === 'error')) {
-        throw new Error(`Codex API error (HTTP ${resp.status}): ` + (data.error?.message || data.error || data.detail || JSON.stringify(data).slice(0, 400)));
-    }
-    if (data.status && data.status !== 'completed') {
-        console.log(`[codex] response.status=${data.status} incomplete_details=${JSON.stringify(data.incomplete_details || data.incomplete_reason || {})}`);
-    }
-    console.log(`[codex] output item types: ${(data.output || []).map(i => i.type).join(', ') || '(none)'}`);
-    // Responses API: data.output is an array of items — output_text parts + function_call items.
+    console.log(`[codex] POST (stream) model=${bodyObj.model} inputItems=${bodyObj.input.length} tools=${bodyObj.tools ? bodyObj.tools.length : 0} acct=${auth.accountId ? 'y' : 'n'} tokLen=${(auth.accessToken || '').length}`);
+
+    let finalResponse = null, errMsg = null, accText = '', firstChunkLogged = false;
+    const evtTypes = {};
+    await streamExternal(CODEX_RESPONSES_URL, headers, body,
+        (chunk) => {
+            const s = String(chunk);
+            if (!firstChunkLogged) { firstChunkLogged = true; console.log(`[codex] first chunk[0:400]=${s.slice(0, 400)}`); }
+            if (!s.includes('data:')) {
+                // not SSE → almost certainly an error body, e.g. {"detail":"..."}
+                const t = s.trim();
+                if (t.startsWith('{')) { try { const e = JSON.parse(t); errMsg = e.detail || e.error?.message || e.message || JSON.stringify(e).slice(0, 300); } catch {} }
+                return;
+            }
+            s.split('\n').forEach(line => {
+                if (!line.startsWith('data:')) return;
+                const raw = line.slice(5).trim();
+                if (!raw || raw === '[DONE]') return;
+                try {
+                    const ev = JSON.parse(raw);
+                    const t = ev.type || ev.event;
+                    evtTypes[t] = (evtTypes[t] || 0) + 1;
+                    if (t === 'response.output_text.delta' && ev.delta) accText += ev.delta;
+                    else if (t === 'response.completed' || t === 'response.incomplete') finalResponse = ev.response || ev;
+                    else if (t === 'response.failed' || t === 'error' || t === 'response.error') errMsg = ev.response?.error?.message || ev.error?.message || ev.message || JSON.stringify(ev).slice(0, 300);
+                } catch {}
+            });
+        },
+        () => { console.log(`[codex] stream done; events=${JSON.stringify(evtTypes)}; finalResponse=${finalResponse ? 'y' : 'n'}; accText=${accText.length}c; err=${errMsg || '-'}`); }
+    );
+    if (errMsg) throw new Error('Codex API error: ' + errMsg);
+
+    // Assemble from finalResponse.output[] (text parts + function_call items)
+    const out = (finalResponse && finalResponse.output) || [];
     let text = '';
     const toolCalls = [];
-    for (const item of (data.output || [])) {
+    for (const item of out) {
         if (item.type === 'function_call') {
             let args = {};
             try { args = item.arguments ? JSON.parse(item.arguments) : {}; } catch { args = {}; }
@@ -632,8 +656,8 @@ async function callAI_Codex(messages, cfg, includeTools = true) {
             }
         }
     }
-    if (!text && !toolCalls.length && typeof data.output_text === 'string') text = data.output_text;
-    // Return OpenAI-shaped result; let appendAssistantMessage build the assistant message (with tool_calls).
+    if (!text && !toolCalls.length) text = accText;   // fallback to streamed deltas
+    // OpenAI-shaped result; appendAssistantMessage builds the assistant message (with tool_calls).
     return { content: text, toolCalls };
 }
 
