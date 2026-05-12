@@ -893,7 +893,14 @@ if [ "$AI_PROVIDER" = "ollama" ]; then
     fi
 fi
 
-# 清掉 Claude Max proxy（含它的子行程，例如 SDK spawn 的 claude）+ 任何還佔著 :3456 的殘留
+# 有效的 proxy port：跟著 ai_settings.env 的 OPENAI_BASE_URL 走（這樣舊的 :3456 設定不會壞），
+# 沒有的話用 wizard 的預設（_claude_max_lib.sh 的 CLAUDE_PROXY_PORT = 3457）。
+if [[ "$OPENAI_BASE_URL" =~ 127\.0\.0\.1:([0-9]+) ]]; then
+    CLAUDE_PROXY_PORT="${BASH_REMATCH[1]}"
+fi
+: "${CLAUDE_PROXY_PORT:=3457}"
+
+# 清掉 Claude Max proxy（含它的子行程，例如 SDK spawn 的 claude）+ 任何還佔著該 port 的殘留
 # （包括 dashboard 起的 detached proxy、上個 session 沒清乾淨的）。靠 trap 確保 start.sh
 # 不管怎麼結束（正常 / 引擎退出 / Ctrl+C / 出錯）都會跑。
 _cleanup_claude_proxy() {
@@ -903,7 +910,7 @@ _cleanup_claude_proxy() {
         wait "$CLAUDE_PROXY_PID" 2>/dev/null || true
     fi
     if command -v lsof >/dev/null 2>&1; then
-        local _p; _p="$(lsof -ti TCP:3456 2>/dev/null || true)"
+        local _p; _p="$(lsof -ti TCP:"${CLAUDE_PROXY_PORT:-3457}" 2>/dev/null || true)"
         if [ -n "$_p" ]; then
             for _q in $_p; do pkill -P "$_q" 2>/dev/null || true; done
             # shellcheck disable=SC2086
@@ -920,19 +927,20 @@ if [ "$CLAUDE_PROXY_MODE" = "1" ]; then
     if [ ! -f "$PROXY_DIR/server.js" ]; then
         echo -e "  ${RED}[ERROR] tools/claude-proxy submodule missing. Run: git submodule update --init${RESET}"
     else
-        echo -e "  ${CYAN}[~] Starting Claude Max proxy...${RESET}"
+        echo -e "  ${CYAN}[~] Starting Claude Max proxy (port $CLAUDE_PROXY_PORT)...${RESET}"
         # exec → subshell 被 node 取代，$! 就是 node 本身的 PID（不加 exec 的話 $! 是 subshell，
         # kill 它只會殺掉 subshell，裡面的 node 變孤兒繼續跑 → 抓不住 USB、claude 二進位卡迴圈高 CPU）
-        ( cd "$PROXY_DIR" && exec "$NODE_BIN" server.js >> "$PROXY_LOG" 2>&1 ) &
+        # PORT=... → 確保 proxy 監聽的 port 跟 OPENAI_BASE_URL 一致（server.js 不會自己讀 .env）
+        ( cd "$PROXY_DIR" && PORT="$CLAUDE_PROXY_PORT" exec "$NODE_BIN" server.js >> "$PROXY_LOG" 2>&1 ) &
         CLAUDE_PROXY_PID=$!
         for _i in 1 2 3 4 5; do
             sleep 1
-            if curl -sf "http://127.0.0.1:3456/health" >/dev/null 2>&1; then
+            if curl -sf "http://127.0.0.1:${CLAUDE_PROXY_PORT}/health" >/dev/null 2>&1; then
                 echo -e "  ${GREEN}[OK] Claude Max proxy ready (PID $CLAUDE_PROXY_PID).${RESET}"
                 break
             fi
         done
-        if ! curl -sf "http://127.0.0.1:3456/health" >/dev/null 2>&1; then
+        if ! curl -sf "http://127.0.0.1:${CLAUDE_PROXY_PORT}/health" >/dev/null 2>&1; then
             echo -e "  ${YELLOW}[WARN] Claude Max proxy not responding after 5s — check $PROXY_LOG${RESET}"
         fi
         echo ""
@@ -995,5 +1003,5 @@ fi
 if [ "$CLAUDE_PROXY_MODE" = "1" ]; then
     echo ""
     echo -e "  ${CYAN}[~] Stopping Claude Max proxy...${RESET}"
-    _cleanup_claude_proxy   # 殺 proxy + 它的 claude 子行程 + 任何還佔 :3456 的殘留（trap 也會再跑一次，no-op）
+    _cleanup_claude_proxy   # 殺 proxy + 它的 claude 子行程 + 任何還佔該 port 的殘留（trap 也會再跑一次，no-op）
 fi

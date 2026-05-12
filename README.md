@@ -175,13 +175,13 @@ What happens on first setup:
 3. You pick a default model: `claude-opus-4-7`, `claude-sonnet-4-6` (recommended), or `claude-haiku-4-5`.
 4. A random local-only API key is generated and wired up automatically — you never type an API key.
 
-On every launch after that, a local proxy starts on `127.0.0.1:3456` (logged to `data/claude-proxy.log`) and stops when the engine exits. The proxy is a git submodule at `tools/claude-proxy/` pointing at [`photofanz/portable-claude-proxy`](https://github.com/photofanz/portable-claude-proxy) (derived from [`photofanz/hermes-claude-proxy-v5`](https://github.com/photofanz/hermes-claude-proxy-v5)).
+On every launch after that, a local proxy starts on `127.0.0.1:3457` (logged to `data/claude-proxy.log`) and stops when the engine exits. The proxy is a git submodule at `tools/claude-proxy/` pointing at [`photofanz/portable-claude-proxy`](https://github.com/photofanz/portable-claude-proxy) (derived from [`photofanz/hermes-claude-proxy-v5`](https://github.com/photofanz/hermes-claude-proxy-v5)).
 
 **Notes & limitations:**
 - **macOS / Linux only.** The Windows launcher (`START.bat`) does not expose this option.
 - **OAuth is per-machine.** If you move the project to a different machine or CPU architecture, you may need to re-run setup and log in again (`data/home/.claude/` credentials may not transfer). Force a re-login any time by deleting `data/home/.claude/` and re-running setup.
 - **Dashboard agent mode is not supported on Claude Max.** The proxy ignores OpenAI-style `tools`, so the dashboard's *agent* mode (which calls tools) silently behaves like plain chat. Use chat mode with Claude Max, or switch to a tool-calling provider (OpenRouter, OpenAI, …) for agent mode.
-- After setup, `start.sh`'s header may show the provider as `Custom OpenAI-Compatible` (because the base URL is `localhost:3456`). That's cosmetic — it's still Claude Max.
+- After setup, `start.sh`'s header may show the provider as `Custom OpenAI-Compatible` (because the base URL is `localhost:3457`). That's cosmetic — it's still Claude Max.
 
 ## OpenAI Codex (ChatGPT Subscription) Mode (macOS / Linux)
 
@@ -271,7 +271,7 @@ Proxy activity is logged silently to `data/proxy.log` — it never writes to the
 | Port 3000 already in use | The dashboard is already running — open `http://localhost:3000` directly |
 | `openclaude` not found in PowerShell | Use `.\RESUME.bat <session-id>` instead of calling `openclaude` directly |
 | `Claude Max proxy not responding` | Check `data/claude-proxy.log`. Common cause: OAuth credentials expired — re-run option `10` or delete `data/home/.claude/` and log in again. |
-| Port 3456 still in use after closing the dashboard | The dashboard's self-heal starts the proxy *detached*, so it survives the dashboard. Run `kill $(lsof -ti TCP:3456)` to clear it. |
+| Port 3457 still in use after closing the dashboard | The dashboard's self-heal starts the proxy *detached*, so it survives the dashboard. Run `kill $(lsof -ti TCP:3457)` to clear it. |
 | `tools/claude-proxy` is empty | Submodule not initialised. Run `git submodule update --init tools/claude-proxy`. |
 | `Codex auth.json not found` / Codex login fails | Delete `data/codex/auth.json` and re-run option `11`. Login uses `CODEX_HOME=data/codex` so credentials stay in the project. |
 | Codex token expired in the dashboard | The dashboard refreshes the token automatically; if it persists, re-run option `11` to log in again. |

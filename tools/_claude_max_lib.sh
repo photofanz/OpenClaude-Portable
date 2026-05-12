@@ -7,7 +7,8 @@
 # =================================================================
 
 CLAUDE_PROXY_DIR="$ROOT_DIR/tools/claude-proxy"
-CLAUDE_PROXY_PORT=3456
+# 3457（不是 3456）—— 避開使用者另一套 ~/hermes-claude-proxy / Hermes Agent 常用的 3456
+CLAUDE_PROXY_PORT=3457
 
 # 解析 claude CLI 執行檔路徑：
 #   - macOS/Linux：@anthropic-ai/claude-code-<platform>-<arch>/claude（平台專屬原生 binary）

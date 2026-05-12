@@ -1247,14 +1247,17 @@ const server = createServer(async (req, res) => {
 // ─── Claude Max proxy self-heal ──────────────────────────────
 // 如果使用者直接跑 open_dashboard.sh（沒經 start.sh 主流程），且設定是
 // Claude Max 模式但 proxy 沒在跑，這裡背景起一個。注意：detached + unref，
-// dashboard 結束時 proxy 不會跟著被 kill（會變孤兒，需手動 lsof :3456 + kill）。
+// dashboard 結束時 proxy 不會跟著被 kill（會變孤兒，需手動 lsof -ti TCP:<port> | kill）。
+// port 跟著 OPENAI_BASE_URL 走（預設 3457；舊設定可能是 3456）。
 async function ensureClaudeMaxProxy() {
     const cfg = readConfig();
     if (cfg.CLAUDE_PROXY_MODE !== '1') return;
-    if (!cfg.OPENAI_BASE_URL || !cfg.OPENAI_BASE_URL.includes('127.0.0.1:3456')) return;
+    const m = (cfg.OPENAI_BASE_URL || '').match(/127\.0\.0\.1:(\d+)/);
+    if (!m) return;
+    const port = m[1];
+    const healthUrl = `http://127.0.0.1:${port}/health`;
 
-    const healthOk = await fetch('http://127.0.0.1:3456/health')
-        .then(r => r.ok).catch(() => false);
+    const healthOk = await fetch(healthUrl).then(r => r.ok).catch(() => false);
     if (healthOk) return;
 
     const proxyDir = join(ROOT_DIR, 'tools', 'claude-proxy');
@@ -1262,14 +1265,15 @@ async function ensureClaudeMaxProxy() {
         console.log('  [WARN] CLAUDE_PROXY_MODE=1 but tools/claude-proxy/server.js missing.');
         return;
     }
-    console.log('  [~] Claude Max proxy not running — starting it in background...');
+    console.log(`  [~] Claude Max proxy not running — starting it in background (port ${port})...`);
     const proc = spawn(process.execPath, ['server.js'], {
         cwd: proxyDir, stdio: 'ignore', detached: true,
+        env: { ...process.env, PORT: port },   // server.js 不會自己讀 .env
     });
     proc.unref();
     for (let i = 0; i < 5; i++) {
         await new Promise(r => setTimeout(r, 1000));
-        const ok = await fetch('http://127.0.0.1:3456/health').then(r => r.ok).catch(() => false);
+        const ok = await fetch(healthUrl).then(r => r.ok).catch(() => false);
         if (ok) { console.log('  [OK] Claude Max proxy ready.'); return; }
     }
     console.log('  [WARN] Claude Max proxy did not become ready in 5s.');

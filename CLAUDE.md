@@ -75,7 +75,7 @@ NVIDIA NIM 還會額外寫入 `CLAUDE_CODE_AGENT_LIST_IN_MESSAGES=false` 與 `CL
 ```env
 AI_PROVIDER=openai
 CLAUDE_CODE_USE_OPENAI=1
-OPENAI_BASE_URL=http://127.0.0.1:3456/v1
+OPENAI_BASE_URL=http://127.0.0.1:3457/v1
 OPENAI_API_FORMAT=chat_completions
 OPENAI_API_KEY=sk-portable-<random>     # 等同 tools/claude-proxy/.env 的 API_KEY（wizard 一次產生寫兩處）
 OPENAI_MODEL=claude-sonnet-4-6          # 或 opus-4-7 / haiku-4-5
@@ -83,7 +83,7 @@ AI_DISPLAY_MODEL=claude-sonnet-4-6
 CLAUDE_PROXY_MODE=1                     # start.sh 與 dashboard 判斷旗標
 ```
 
-走 OpenAI-相容路徑（**不傳** `--provider`），跟 OpenRouter / DeepSeek / LM Studio / Custom 同模式 —— 原因同上一條規則。`CLAUDE_PROXY_MODE=1` 時 `start.sh` 在引擎啟動前背景起 [tools/claude-proxy/server.js](tools/claude-proxy/)（git submodule，指向 `photofanz/portable-claude-proxy`，從 `hermes-claude-proxy-v5` 衍生 — 內部用 `@anthropic-ai/claude-agent-sdk` in-process，**不 spawn CLI**），引擎結束時 kill — 跟 Ollama 同模式。Proxy log 在 `data/claude-proxy.log`，bind `127.0.0.1:3456` only。OAuth credentials 在 `data/home/.claude/.credentials.json`（HOME 已被 portable 重導涵蓋）。`claude` CLI（`@anthropic-ai/claude-code`）只用於首次 `claude login`，runtime 不需要 — 但 `start.sh` 的每日更新檢查會順手 `npm outdated @anthropic-ai/claude-code`（`--no-claude-cli-update` 可跳過）。Dashboard（[dashboard/server.mjs](dashboard/server.mjs)）的 OpenAI 路徑直接吃這個 proxy（0 改動），啟動時若偵測 `CLAUDE_PROXY_MODE=1` 且 proxy 沒在跑會 self-heal（detached spawn，dashboard 結束不會 kill proxy — 會變孤兒）；**但 agent mode 的 OpenAI tools 會被 proxy 忽略**（agent mode 對 Claude Max 沉默失效，見 README）。
+走 OpenAI-相容路徑（**不傳** `--provider`），跟 OpenRouter / DeepSeek / LM Studio / Custom 同模式 —— 原因同上一條規則。`CLAUDE_PROXY_MODE=1` 時 `start.sh` 在引擎啟動前背景起 [tools/claude-proxy/server.js](tools/claude-proxy/)（git submodule，指向 `photofanz/portable-claude-proxy`，從 `hermes-claude-proxy-v5` 衍生 — 內部用 `@anthropic-ai/claude-agent-sdk` in-process，**不 spawn CLI**），引擎結束時 kill — 跟 Ollama 同模式。Proxy log 在 `data/claude-proxy.log`，bind `127.0.0.1:3457` only。OAuth credentials 在 `data/home/.claude/.credentials.json`（HOME 已被 portable 重導涵蓋）。`claude` CLI（`@anthropic-ai/claude-code`）只用於首次 `claude login`，runtime 不需要 — 但 `start.sh` 的每日更新檢查會順手 `npm outdated @anthropic-ai/claude-code`（`--no-claude-cli-update` 可跳過）。Dashboard（[dashboard/server.mjs](dashboard/server.mjs)）的 OpenAI 路徑直接吃這個 proxy（0 改動），啟動時若偵測 `CLAUDE_PROXY_MODE=1` 且 proxy 沒在跑會 self-heal（detached spawn，dashboard 結束不會 kill proxy — 會變孤兒）；**但 agent mode 的 OpenAI tools 會被 proxy 忽略**（agent mode 對 Claude Max 沉默失效，見 README）。
 
 ### OpenAI Codex 路徑（`11)` 選項，僅 macOS/Linux）
 
