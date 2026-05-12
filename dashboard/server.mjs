@@ -612,7 +612,7 @@ async function callAI_Codex(messages, cfg, includeTools = true) {
     const headers = { ...codexHeaders(auth), 'Content-Length': String(Buffer.byteLength(body)) };
     console.log(`[codex] POST (stream) model=${bodyObj.model} inputItems=${bodyObj.input.length} tools=${bodyObj.tools ? bodyObj.tools.length : 0} acct=${auth.accountId ? 'y' : 'n'} tokLen=${(auth.accessToken || '').length}`);
 
-    let text = '', accText = '', errMsg = null, sawCompleted = false, firstChunkLogged = false;
+    let text = '', accText = '', errMsg = null, sawCompleted = false;
     const toolCalls = [];
     const fcArgs = {};   // output_index → accumulated arguments string (from function_call_arguments.delta)
     const evtTypes = {};
@@ -640,7 +640,6 @@ async function callAI_Codex(messages, cfg, includeTools = true) {
     await streamExternal(CODEX_RESPONSES_URL, headers, body,
         (chunk) => {
             const s = String(chunk);
-            if (!firstChunkLogged) { firstChunkLogged = true; console.log(`[codex] first chunk[0:400]=${s.slice(0, 400)}`); }
             if (!buf && !s.includes('data:')) {
                 // not SSE at all → almost certainly an error body, e.g. {"detail":"..."}
                 const t = s.trim();
@@ -865,11 +864,10 @@ async function streamChatResponse(messages, cfg, res) {
             const bodyObj = buildCodexBody(messages, cfg, { stream: true });   // chat mode → no tools
             const body = JSON.stringify(bodyObj);
             const headers = { ...codexHeaders(auth), 'Content-Length': String(Buffer.byteLength(body)) };
-            console.log(`[codex/stream] POST ${CODEX_RESPONSES_URL} model=${bodyObj.model} inputItems=${bodyObj.input.length} acct=${auth.accountId ? 'y' : 'n'} tokLen=${(auth.accessToken || '').length}`);
-            let _firstChunkLogged = false; const _evtTypes = {};
+            console.log(`[codex/stream] POST model=${bodyObj.model} inputItems=${bodyObj.input.length} acct=${auth.accountId ? 'y' : 'n'}`);
+            const _evtTypes = {};
             await streamExternal(CODEX_RESPONSES_URL, headers, body,
                 (chunk) => {
-                    if (!_firstChunkLogged) { _firstChunkLogged = true; console.log(`[codex/stream] first chunk[0:500]=${String(chunk).slice(0, 500)}`); }
                     chunk.split('\n').forEach(line => {
                         if (!line.startsWith('data:')) return;
                         const raw = line.slice(5).trim();
