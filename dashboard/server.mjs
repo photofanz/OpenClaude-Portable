@@ -290,6 +290,13 @@ function toolsForGemini() {
     })) }];
 }
 
+// OpenAI Responses API (Codex): function tools are flat (not nested under `function`)
+function toolsForCodexResponses() {
+    return TOOL_DEFS.map(t => ({
+        type: 'function', name: t.name, description: t.description, parameters: t.parameters,
+    }));
+}
+
 // ─── Tool Executors ──────────────────────────────────────────
 
 function resolvePath(relPath) {
@@ -499,6 +506,11 @@ function isCodexSetup(cfg) {
         || (cfg.OPENAI_BASE_URL && cfg.OPENAI_BASE_URL.includes('backend-api/codex'))
         || cfg.CODEX_CREDENTIAL_SOURCE === 'oauth';
 }
+// Claude Max = provider openai + CLAUDE_PROXY_MODE + a 127.0.0.1:<port> base URL (the bundled proxy).
+// The proxy ignores OpenAI `tools`, so agent-mode tool calling can't work here (unlike Codex).
+function isClaudeMaxProxy(cfg) {
+    return cfg.CLAUDE_PROXY_MODE === '1' && !!cfg.OPENAI_BASE_URL && cfg.OPENAI_BASE_URL.includes('127.0.0.1:');
+}
 function codexAuthPath(_cfg) {
     // Always relative to the project root (cfg.CODEX_HOME in ai_settings.env may be a stale
     // absolute path from before the folder was moved/copied).
@@ -546,17 +558,32 @@ async function ensureFreshCodexToken(cfg) {
     try { writeFileSync(auth.path, JSON.stringify(updated, null, 2), 'utf-8'); } catch {}
     return readCodexAuth(cfg);
 }
-// dashboard messages → Responses API input items
+// dashboard messages (OpenAI-style) → Responses API input items.
+// Handles: system → instructions; user/assistant text → message item;
+//   assistant tool_calls → function_call items; role:"tool" → function_call_output items.
 function messagesToCodexInput(messages) {
     let instructions = '';
     const input = [];
     for (const m of messages) {
         const text = typeof m.content === 'string' ? m.content
-            : Array.isArray(m.content) ? m.content.map(c => c.text || '').join('\n') : String(m.content ?? '');
+            : Array.isArray(m.content) ? m.content.map(c => c.text || '').join('\n') : (m.content == null ? '' : String(m.content));
         if (m.role === 'system') { instructions += (instructions ? '\n' : '') + text; continue; }
-        const role = m.role === 'assistant' ? 'assistant' : 'user';
-        const partType = role === 'assistant' ? 'output_text' : 'input_text';
-        input.push({ type: 'message', role, content: [{ type: partType, text }] });
+        if (m.role === 'tool') {
+            input.push({ type: 'function_call_output', call_id: m.tool_call_id, output: text });
+            continue;
+        }
+        if (m.role === 'assistant') {
+            if (text) input.push({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] });
+            for (const tc of (m.tool_calls || [])) {
+                input.push({
+                    type: 'function_call', call_id: tc.id, name: tc.function?.name,
+                    arguments: typeof tc.function?.arguments === 'string' ? tc.function.arguments : JSON.stringify(tc.function?.arguments ?? {}),
+                });
+            }
+            continue;
+        }
+        // user (or anything else)
+        input.push({ type: 'message', role: 'user', content: [{ type: 'input_text', text }] });
     }
     if (input.length === 0) input.push({ type: 'message', role: 'user', content: [{ type: 'input_text', text: '' }] });
     return { instructions, input };
@@ -566,30 +593,39 @@ function codexHeaders(auth) {
     if (auth.accountId) h['chatgpt-account-id'] = auth.accountId;
     return h;
 }
-function buildCodexBody(messages, cfg, stream) {
+function buildCodexBody(messages, cfg, { stream = false, includeTools = false } = {}) {
     const { instructions, input } = messagesToCodexInput(messages);
-    const body = { model: cfg.OPENAI_MODEL || cfg.AI_DISPLAY_MODEL || 'gpt-5.1-codex', input, store: false, stream: !!stream };
+    const body = { model: cfg.OPENAI_MODEL || cfg.AI_DISPLAY_MODEL || 'gpt-5.3-codex', input, store: false, stream: !!stream };
     if (instructions) body.instructions = instructions;
+    if (includeTools) { body.tools = toolsForCodexResponses(); body.tool_choice = 'auto'; }
     return body;
 }
-// non-streaming (for agent mode — tools ignored, behaves like plain chat)
-async function callAI_Codex(messages, cfg, _includeTools = true) {
+// non-streaming (used by agent mode). includeTools → function-calling supported via the Responses API.
+async function callAI_Codex(messages, cfg, includeTools = true) {
     const auth = await ensureFreshCodexToken(cfg);
-    const body = JSON.stringify(buildCodexBody(messages, cfg, false));
+    const body = JSON.stringify(buildCodexBody(messages, cfg, { stream: false, includeTools }));
     const headers = { ...codexHeaders(auth), 'Content-Length': String(Buffer.byteLength(body)) };
     const resp = await fetchExternal(CODEX_RESPONSES_URL, headers, body, 'POST');
     let data;
     try { data = JSON.parse(resp.data); } catch { throw new Error('Codex API: invalid response ' + resp.data.slice(0, 300)); }
     if (data.error) throw new Error('Codex API error: ' + (data.error.message || JSON.stringify(data.error)));
-    // Responses API: data.output is an array of items; collect output_text
+    // Responses API: data.output is an array of items — output_text parts + function_call items.
     let text = '';
+    const toolCalls = [];
     for (const item of (data.output || [])) {
-        for (const part of (item.content || [])) {
-            if (part.type === 'output_text' && part.text) text += part.text;
+        if (item.type === 'function_call') {
+            let args = {};
+            try { args = item.arguments ? JSON.parse(item.arguments) : {}; } catch { args = {}; }
+            toolCalls.push({ id: item.call_id || item.id, name: item.name, args });
+        } else {
+            for (const part of (item.content || [])) {
+                if (part.type === 'output_text' && part.text) text += part.text;
+            }
         }
     }
-    if (!text && typeof data.output_text === 'string') text = data.output_text;
-    return { content: text, toolCalls: [], rawMessage: { role: 'assistant', content: text } };
+    if (!text && !toolCalls.length && typeof data.output_text === 'string') text = data.output_text;
+    // Return OpenAI-shaped result; let appendAssistantMessage build the assistant message (with tool_calls).
+    return { content: text, toolCalls };
 }
 
 // Unified caller
@@ -684,12 +720,23 @@ async function runAgent(allMessages, cfg, mode, sendSSE) {
         allMessages.unshift({ role: 'system', content: sysContent });
     }
 
+    // Claude Max goes through the bundled proxy, which ignores OpenAI `tools` (it can't return
+    // tool_use for the dashboard to execute). So agent mode there can't call tools — say so once
+    // and run the loop without tools (it'll just answer in one shot, like chat mode).
+    const agentToolsEnabled = !isClaudeMaxProxy(cfg);
+    if (!agentToolsEnabled) {
+        sendSSE({ type: 'agent_reasoning', iteration: 0,
+            content: '⚠️ Agent-mode tool calling is not supported on Claude Max (the local proxy ignores tools). ' +
+                     'This will answer like chat mode. For tool-using agents, use a tool-calling provider: ' +
+                     'OpenAI Codex (ChatGPT subscription), OpenRouter, OpenAI, etc.' });
+    }
+
     for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
         sendSSE({ type: 'agent_thinking', iteration: iter + 1 });
 
         let aiResponse;
         try {
-            aiResponse = await callAI(allMessages, cfg, true);
+            aiResponse = await callAI(allMessages, cfg, agentToolsEnabled);
         } catch (e) {
             // If tools failed, try once without tools as fallback
             if (iter === 0) {
@@ -775,7 +822,7 @@ async function streamChatResponse(messages, cfg, res) {
         let fullText = '';
         try {
             const auth = await ensureFreshCodexToken(cfg);
-            const body = JSON.stringify(buildCodexBody(messages, cfg, true));
+            const body = JSON.stringify(buildCodexBody(messages, cfg, { stream: true }));   // chat mode → no tools
             const headers = { ...codexHeaders(auth), 'Content-Length': String(Buffer.byteLength(body)) };
             await streamExternal(CODEX_RESPONSES_URL, headers, body,
                 (chunk) => {

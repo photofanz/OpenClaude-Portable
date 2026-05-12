@@ -191,7 +191,7 @@ On every launch after that, a local proxy starts on `127.0.0.1:3457` (logged to 
 **Notes & limitations:**
 - **macOS / Linux only.** The Windows launcher (`START.bat`) does not expose this option.
 - **OAuth is per-machine.** If you move the project to a different machine or CPU architecture, you may need to re-run setup and log in again (`data/home/.claude/` credentials may not transfer). Force a re-login any time by deleting `data/home/.claude/` and re-running setup.
-- **Dashboard agent mode is not supported on Claude Max.** The proxy ignores OpenAI-style `tools`, so the dashboard's *agent* mode (which calls tools) silently behaves like plain chat. Use chat mode with Claude Max, or switch to a tool-calling provider (OpenRouter, OpenAI, …) for agent mode.
+- **Dashboard agent mode (tool calling) is not supported on Claude Max.** The bundled proxy ignores OpenAI-style `tools`, so the dashboard's *agent* mode shows a notice and answers like chat mode. Use chat mode with Claude Max, or a tool-calling provider (OpenAI Codex, OpenRouter, OpenAI, …) for agent mode.
 - After setup, `start.sh`'s header may show the provider as `Custom OpenAI-Compatible` (because the base URL is `localhost:3457`). That's cosmetic — it's still Claude Max.
 
 ## OpenAI Codex (ChatGPT Subscription) Mode (macOS / Linux)
@@ -209,7 +209,7 @@ On every launch after that, the engine reads `data/codex/auth.json`, refreshes t
 **Notes & limitations:**
 - **macOS / Linux only.** The Windows launcher (`START.bat`) does not expose this option.
 - Re-run setup any time by deleting `data/codex/auth.json` and re-running option `11`.
-- **Dashboard agent mode is limited on Codex.** The dashboard's chat mode works with Codex; agent mode (tool calls) degrades to plain chat (the Codex path doesn't pass `tools`). Use a tool-calling provider for agent mode.
+- **Dashboard agent mode works on Codex** — the Codex path uses the Responses API's native function calling, so the dashboard's agent mode can call its tools (write/read files, run commands, search).
 - After setup, `start.sh`'s header shows the provider as `codex`.
 
 ## Custom OpenAI-Compatible Provider
