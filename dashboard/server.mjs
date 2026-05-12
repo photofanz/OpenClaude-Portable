@@ -602,8 +602,9 @@ function buildCodexBody(messages, cfg, { stream = false, includeTools = false } 
     return body;
 }
 // Used by agent mode. The chatgpt.com/backend-api/codex/responses backend MANDATES stream:true,
-// so we stream the request but consume the SSE synchronously and assemble the full result
-// (text + function_call items) from the `response.completed` event's output[].
+// so we stream the request, parse the SSE (with proper cross-chunk line buffering), and assemble
+// the result (text + function_call items) from response.output_item.done events (response.completed
+// carries the whole response object and can be too big to land in one chunk).
 async function callAI_Codex(messages, cfg, includeTools = true) {
     const auth = await ensureFreshCodexToken(cfg);
     const bodyObj = buildCodexBody(messages, cfg, { stream: true, includeTools });   // backend requires stream:true
@@ -611,52 +612,58 @@ async function callAI_Codex(messages, cfg, includeTools = true) {
     const headers = { ...codexHeaders(auth), 'Content-Length': String(Buffer.byteLength(body)) };
     console.log(`[codex] POST (stream) model=${bodyObj.model} inputItems=${bodyObj.input.length} tools=${bodyObj.tools ? bodyObj.tools.length : 0} acct=${auth.accountId ? 'y' : 'n'} tokLen=${(auth.accessToken || '').length}`);
 
-    let finalResponse = null, errMsg = null, accText = '', firstChunkLogged = false;
+    let text = '', accText = '', errMsg = null, sawCompleted = false, firstChunkLogged = false;
+    const toolCalls = [];
+    const fcArgs = {};   // output_index → accumulated arguments string (from function_call_arguments.delta)
     const evtTypes = {};
+    let buf = '';
+    const handleEvent = (raw) => {
+        let ev; try { ev = JSON.parse(raw); } catch { return; }
+        const t = ev.type || ev.event;
+        evtTypes[t] = (evtTypes[t] || 0) + 1;
+        if (t === 'response.output_text.delta' && typeof ev.delta === 'string') accText += ev.delta;
+        else if (t === 'response.function_call_arguments.delta' && typeof ev.delta === 'string') fcArgs[ev.output_index] = (fcArgs[ev.output_index] || '') + ev.delta;
+        else if (t === 'response.function_call_arguments.done' && typeof ev.arguments === 'string') fcArgs[ev.output_index] = ev.arguments;
+        else if (t === 'response.output_item.done' && ev.item) {
+            const it = ev.item;
+            if (it.type === 'function_call') {
+                const argStr = it.arguments || fcArgs[ev.output_index] || '{}';
+                let args = {}; try { args = argStr ? JSON.parse(argStr) : {}; } catch { args = {}; }
+                toolCalls.push({ id: it.call_id || it.id, name: it.name, args });
+            } else if (it.content) {
+                for (const part of it.content) if (part.type === 'output_text' && part.text) text += part.text;
+            }
+        }
+        else if (t === 'response.completed') sawCompleted = true;
+        else if (t === 'response.failed' || t === 'error' || t === 'response.error') errMsg = ev.response?.error?.message || ev.error?.message || ev.message || JSON.stringify(ev).slice(0, 300);
+    };
     await streamExternal(CODEX_RESPONSES_URL, headers, body,
         (chunk) => {
             const s = String(chunk);
             if (!firstChunkLogged) { firstChunkLogged = true; console.log(`[codex] first chunk[0:400]=${s.slice(0, 400)}`); }
-            if (!s.includes('data:')) {
-                // not SSE → almost certainly an error body, e.g. {"detail":"..."}
+            if (!buf && !s.includes('data:')) {
+                // not SSE at all → almost certainly an error body, e.g. {"detail":"..."}
                 const t = s.trim();
                 if (t.startsWith('{')) { try { const e = JSON.parse(t); errMsg = e.detail || e.error?.message || e.message || JSON.stringify(e).slice(0, 300); } catch {} }
                 return;
             }
-            s.split('\n').forEach(line => {
-                if (!line.startsWith('data:')) return;
+            buf += s;
+            const lines = buf.split('\n');
+            buf = lines.pop();   // keep the last (possibly incomplete) line
+            for (const line of lines) {
+                if (!line.startsWith('data:')) continue;
                 const raw = line.slice(5).trim();
-                if (!raw || raw === '[DONE]') return;
-                try {
-                    const ev = JSON.parse(raw);
-                    const t = ev.type || ev.event;
-                    evtTypes[t] = (evtTypes[t] || 0) + 1;
-                    if (t === 'response.output_text.delta' && ev.delta) accText += ev.delta;
-                    else if (t === 'response.completed' || t === 'response.incomplete') finalResponse = ev.response || ev;
-                    else if (t === 'response.failed' || t === 'error' || t === 'response.error') errMsg = ev.response?.error?.message || ev.error?.message || ev.message || JSON.stringify(ev).slice(0, 300);
-                } catch {}
-            });
+                if (!raw || raw === '[DONE]') continue;
+                handleEvent(raw);
+            }
         },
-        () => { console.log(`[codex] stream done; events=${JSON.stringify(evtTypes)}; finalResponse=${finalResponse ? 'y' : 'n'}; accText=${accText.length}c; err=${errMsg || '-'}`); }
+        () => {
+            if (buf.startsWith('data:')) { const raw = buf.slice(5).trim(); if (raw && raw !== '[DONE]') handleEvent(raw); }
+            console.log(`[codex] stream done; events=${JSON.stringify(evtTypes)}; toolCalls=${toolCalls.length}; text=${text.length || accText.length}c; completed=${sawCompleted}; err=${errMsg || '-'}`);
+        }
     );
     if (errMsg) throw new Error('Codex API error: ' + errMsg);
-
-    // Assemble from finalResponse.output[] (text parts + function_call items)
-    const out = (finalResponse && finalResponse.output) || [];
-    let text = '';
-    const toolCalls = [];
-    for (const item of out) {
-        if (item.type === 'function_call') {
-            let args = {};
-            try { args = item.arguments ? JSON.parse(item.arguments) : {}; } catch { args = {}; }
-            toolCalls.push({ id: item.call_id || item.id, name: item.name, args });
-        } else {
-            for (const part of (item.content || [])) {
-                if (part.type === 'output_text' && part.text) text += part.text;
-            }
-        }
-    }
-    if (!text && !toolCalls.length) text = accText;   // fallback to streamed deltas
+    if (!text && !toolCalls.length) text = accText;   // fallback to streamed text deltas
     // OpenAI-shaped result; appendAssistantMessage builds the assistant message (with tool_calls).
     return { content: text, toolCalls };
 }
