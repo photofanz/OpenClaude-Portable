@@ -924,6 +924,18 @@ trap '_cleanup_claude_proxy' EXIT
 if [ "$CLAUDE_PROXY_MODE" = "1" ]; then
     PROXY_LOG="$DATA_DIR/claude-proxy.log"
     PROXY_DIR="$ROOT_DIR/tools/claude-proxy"
+
+    # 啟動引擎前先確認 Claude OAuth 還有效（token 會過期 / 換機器沒帶過來 → 不檢查的話引擎會直接 401）。
+    # _claude_max_lib.sh 已由前面 source；offline 模式（--offline）跳過（離線本來就連不上 Anthropic）。
+    if [ "$SKIP_UPDATE" -ne 1 ] && command -v claude_oauth_ok >/dev/null 2>&1; then
+        if command -v claude_proxy_ready >/dev/null 2>&1 && ! claude_proxy_ready; then
+            echo -e "  ${YELLOW}[!] Claude CLI / proxy deps not installed yet — run: ./start.sh → 4 → 5 (Switch to Claude Max)${RESET}"
+        elif ! claude_oauth_ok; then
+            echo -e "  ${YELLOW}[!] Claude OAuth not valid / expired — launching login...${RESET}"
+            claude_oauth_login || echo -e "  ${RED}[ERROR] Login failed — Claude Max will likely 401. Re-run: ./start.sh → 4 → 5${RESET}"
+        fi
+    fi
+
     if [ ! -f "$PROXY_DIR/server.js" ]; then
         echo -e "  ${RED}[ERROR] tools/claude-proxy submodule missing. Run: git submodule update --init${RESET}"
     else
