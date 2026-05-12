@@ -32,12 +32,19 @@ claude_proxy_ready() {
     [ -f "$CLAUDE_CLI_BIN" ] && [ -d "$CLAUDE_PROXY_DIR/node_modules/express" ]
 }
 
-# 已通過 Claude 帳號認證了嗎？（claude auth status 在登入/未登入都 exit 0，
-# 所以解析 JSON 的 "loggedIn": true。HOME 用重導後的 data/home，跟 login / engine / proxy 一致）
+# 已通過 Claude 帳號認證、而且 token 還活著嗎？
+#   1) auth status 的 JSON 是不是 "loggedIn": true（在登入/未登入都 exit 0，所以要解析 JSON）
+#   2) 真的打一個小 request —— 過期 / 被撤銷的 token 在 (1) 還會說 loggedIn:true，但 (2) 會 401，
+#      這樣 setup_claude_max 就會偵測到並重新登入。
+# HOME 用重導後的 data/home，跟 login / engine / proxy 一致。
 claude_oauth_ok() {
     CLAUDE_CLI_BIN="$(_resolve_claude_cli_bin)"
     [ -f "$CLAUDE_CLI_BIN" ] || return 1
-    HOME="$DATA_DIR/home" "$CLAUDE_CLI_BIN" auth status 2>/dev/null | grep -q '"loggedIn": *true'
+    HOME="$DATA_DIR/home" "$CLAUDE_CLI_BIN" auth status 2>/dev/null | grep -q '"loggedIn": *true' || return 1
+    local _to=""
+    command -v gtimeout >/dev/null 2>&1 && _to="gtimeout 30"
+    command -v timeout  >/dev/null 2>&1 && _to="timeout 30"
+    HOME="$DATA_DIR/home" $_to "$CLAUDE_CLI_BIN" --print "hi" >/dev/null 2>&1
 }
 
 # 安裝 claude CLI 與 proxy 依賴（沿用 start.sh 既有的 npm cache）
