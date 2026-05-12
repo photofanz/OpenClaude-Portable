@@ -603,12 +603,21 @@ function buildCodexBody(messages, cfg, { stream = false, includeTools = false } 
 // non-streaming (used by agent mode). includeTools → function-calling supported via the Responses API.
 async function callAI_Codex(messages, cfg, includeTools = true) {
     const auth = await ensureFreshCodexToken(cfg);
-    const body = JSON.stringify(buildCodexBody(messages, cfg, { stream: false, includeTools }));
+    const bodyObj = buildCodexBody(messages, cfg, { stream: false, includeTools });
+    const body = JSON.stringify(bodyObj);
     const headers = { ...codexHeaders(auth), 'Content-Length': String(Buffer.byteLength(body)) };
+    console.log(`[codex] POST ${CODEX_RESPONSES_URL} model=${bodyObj.model} inputItems=${bodyObj.input.length} tools=${bodyObj.tools ? bodyObj.tools.length : 0} acct=${auth.accountId ? 'y' : 'n'} tokLen=${(auth.accessToken || '').length}`);
     const resp = await fetchExternal(CODEX_RESPONSES_URL, headers, body, 'POST');
+    console.log(`[codex] <- HTTP ${resp.status}; body[0:600]=${String(resp.data).slice(0, 600)}`);
     let data;
-    try { data = JSON.parse(resp.data); } catch { throw new Error('Codex API: invalid response ' + resp.data.slice(0, 300)); }
-    if (data.error) throw new Error('Codex API error: ' + (data.error.message || JSON.stringify(data.error)));
+    try { data = JSON.parse(resp.data); } catch { throw new Error(`Codex API: non-JSON response (HTTP ${resp.status}): ` + String(resp.data).slice(0, 400)); }
+    if (resp.status >= 400 || data.error || (data.type === 'error')) {
+        throw new Error(`Codex API error (HTTP ${resp.status}): ` + (data.error?.message || data.error || data.detail || JSON.stringify(data).slice(0, 400)));
+    }
+    if (data.status && data.status !== 'completed') {
+        console.log(`[codex] response.status=${data.status} incomplete_details=${JSON.stringify(data.incomplete_details || data.incomplete_reason || {})}`);
+    }
+    console.log(`[codex] output item types: ${(data.output || []).map(i => i.type).join(', ') || '(none)'}`);
     // Responses API: data.output is an array of items — output_text parts + function_call items.
     let text = '';
     const toolCalls = [];
@@ -822,10 +831,14 @@ async function streamChatResponse(messages, cfg, res) {
         let fullText = '';
         try {
             const auth = await ensureFreshCodexToken(cfg);
-            const body = JSON.stringify(buildCodexBody(messages, cfg, { stream: true }));   // chat mode → no tools
+            const bodyObj = buildCodexBody(messages, cfg, { stream: true });   // chat mode → no tools
+            const body = JSON.stringify(bodyObj);
             const headers = { ...codexHeaders(auth), 'Content-Length': String(Buffer.byteLength(body)) };
+            console.log(`[codex/stream] POST ${CODEX_RESPONSES_URL} model=${bodyObj.model} inputItems=${bodyObj.input.length} acct=${auth.accountId ? 'y' : 'n'} tokLen=${(auth.accessToken || '').length}`);
+            let _firstChunkLogged = false; const _evtTypes = {};
             await streamExternal(CODEX_RESPONSES_URL, headers, body,
                 (chunk) => {
+                    if (!_firstChunkLogged) { _firstChunkLogged = true; console.log(`[codex/stream] first chunk[0:500]=${String(chunk).slice(0, 500)}`); }
                     chunk.split('\n').forEach(line => {
                         if (!line.startsWith('data:')) return;
                         const raw = line.slice(5).trim();
@@ -833,16 +846,18 @@ async function streamChatResponse(messages, cfg, res) {
                         try {
                             const ev = JSON.parse(raw);
                             const t = ev.type || ev.event;
+                            _evtTypes[t] = (_evtTypes[t] || 0) + 1;
                             if (t === 'response.output_text.delta' && ev.delta) {
                                 fullText += ev.delta; sendSSE({ type: 'delta', content: ev.delta });
-                            } else if (t === 'response.failed' || t === 'error') {
-                                const msg = ev.response?.error?.message || ev.error?.message || 'Codex request failed';
-                                sendSSE({ type: 'error', content: msg });
+                            } else if (t === 'response.failed' || t === 'error' || t === 'response.error') {
+                                const msg = ev.response?.error?.message || ev.error?.message || ev.message || JSON.stringify(ev).slice(0, 300);
+                                console.log(`[codex/stream] failure event: ${msg}`);
+                                sendSSE({ type: 'error', content: 'Codex: ' + msg });
                             }
                         } catch {}
                     });
                 },
-                () => { sendSSE({ type: 'done', fullText }); res.end(); }
+                () => { console.log(`[codex/stream] done; fullText=${fullText.length}c; events=${JSON.stringify(_evtTypes)}`); sendSSE({ type: 'done', fullText }); res.end(); }
             );
         } catch (e) {
             sendSSE({ type: 'error', content: `Codex error: ${e.message}` });
