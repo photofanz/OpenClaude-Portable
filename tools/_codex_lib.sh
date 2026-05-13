@@ -52,7 +52,10 @@ codex_oauth_login() {
     echo -e "  ${DIM}A browser window will open. Sign in with your ChatGPT account (Plus/Pro/Team).${RESET}"
     echo -e "  ${DIM}Credentials are saved INSIDE this folder (data/codex/auth.json) via CODEX_HOME.${RESET}"
     echo ""
-    read -p "  Press Enter to start login... " _
+    # 非互動模式（dashboard 透過 server endpoint 跑時）：不要 read stdin
+    if [ "${OPENCLAUDE_NONINTERACTIVE:-0}" != "1" ]; then
+        read -p "  Press Enter to start login... " _
+    fi
     mkdir -p "$CODEX_HOME_DIR"
     CODEX_CLI_JS="$(_resolve_codex_cli_js)"
     CODEX_HOME="$CODEX_HOME_DIR" "$NODE_BIN" "$CODEX_CLI_JS" login
@@ -88,19 +91,22 @@ setup_codex() {
     fi
 
     # 3) 選模型（對齊引擎 getCodexModelOptions 的當前清單；引擎預設是 codexplan = gpt-5.5 high reasoning）
-    echo ""
-    echo -e "  ${CYAN}Choose default model:${RESET}"
-    echo -e "    ${CYAN}1)${RESET} gpt-5.3-codex        ${DIM}- newest Codex model, high reasoning (recommended)${RESET}"
-    echo -e "    ${CYAN}2)${RESET} gpt-5.3-codex-spark  ${DIM}- fast Codex variant for tool loops${RESET}"
-    echo -e "    ${CYAN}3)${RESET} gpt-5.5              ${DIM}- newest general GPT-5.5, high reasoning (engine default)${RESET}"
-    echo -e "    ${CYAN}4)${RESET} Custom...            ${DIM}- e.g. gpt-5.4, gpt-5.2-codex, gpt-5.1-codex-max, gpt-5.1-codex-mini, gpt-5.5-mini${RESET}"
-    read -p "  Select (1-4) [Enter for 1]: " _MSEL
-    case "$_MSEL" in
-        2) CODEX_MODEL="gpt-5.3-codex-spark" ;;
-        3) CODEX_MODEL="gpt-5.5" ;;
-        4) read -p "  Enter model name: " CODEX_MODEL; [ -z "$CODEX_MODEL" ] && CODEX_MODEL="gpt-5.3-codex" ;;
-        *) CODEX_MODEL="gpt-5.3-codex" ;;
-    esac
+    #    若 caller 已用環境變數帶入 CODEX_MODEL（dashboard setup endpoint），就跳過選單
+    if [ -z "${CODEX_MODEL:-}" ]; then
+        echo ""
+        echo -e "  ${CYAN}Choose default model:${RESET}"
+        echo -e "    ${CYAN}1)${RESET} gpt-5.3-codex        ${DIM}- newest Codex model, high reasoning (recommended)${RESET}"
+        echo -e "    ${CYAN}2)${RESET} gpt-5.3-codex-spark  ${DIM}- fast Codex variant for tool loops${RESET}"
+        echo -e "    ${CYAN}3)${RESET} gpt-5.5              ${DIM}- newest general GPT-5.5, high reasoning (engine default)${RESET}"
+        echo -e "    ${CYAN}4)${RESET} Custom...            ${DIM}- e.g. gpt-5.4, gpt-5.2-codex, gpt-5.1-codex-max, gpt-5.1-codex-mini, gpt-5.5-mini${RESET}"
+        read -p "  Select (1-4) [Enter for 1]: " _MSEL
+        case "$_MSEL" in
+            2) CODEX_MODEL="gpt-5.3-codex-spark" ;;
+            3) CODEX_MODEL="gpt-5.5" ;;
+            4) read -p "  Enter model name: " CODEX_MODEL; [ -z "$CODEX_MODEL" ] && CODEX_MODEL="gpt-5.3-codex" ;;
+            *) CODEX_MODEL="gpt-5.3-codex" ;;
+        esac
+    fi
 
     # 4) 寫 ai_settings.env
     #    引擎的「codex」不是 --provider 值，而是走 provider=openai + Codex backend base URL

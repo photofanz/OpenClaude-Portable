@@ -997,6 +997,54 @@ const server = createServer(async (req, res) => {
         }
         if (url.pathname === '/api/config/import' && req.method === 'POST') { writeFileSync(ENV_FILE, await readBodyRaw(req), 'utf-8'); return sendJSON(res, 200, { success: true }); }
 
+        // ── OAuth Provider Setup (Claude Max / OpenAI Codex) ──────────
+        // 跑 tools/setup_oauth_provider.sh（非互動），把 stdout/stderr 透過 SSE 串到前端。
+        // OAuth 'claude auth login' / 'codex login' 會在伺服器這台機器開瀏覽器，要使用者完成授權。
+        // 成功後（exit 0）：claude-max 順手起 proxy；回 { type:'done', success, config }。
+        if (url.pathname === '/api/setup/oauth-provider' && req.method === 'POST') {
+            const { provider, model } = await readBody(req);
+            res.writeHead(200, {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'Access-Control-Allow-Origin': '*',
+            });
+            const sendSSE = (data) => { try { res.write(`data: ${JSON.stringify(data)}\n\n`); } catch {} };
+
+            if (IS_WIN) { sendSSE({ type: 'error', message: 'OAuth subscription providers (Claude Max / OpenAI Codex) are macOS/Linux only.' }); return res.end(); }
+            if (provider !== 'claude-max' && provider !== 'codex') { sendSSE({ type: 'error', message: `Unknown OAuth provider: ${provider}` }); return res.end(); }
+
+            const OAUTH_PROVIDER_DEFAULTS = { 'claude-max': 'claude-sonnet-4-6', 'codex': 'gpt-5.3-codex' };
+            const chosenModel = (model && String(model).trim()) || OAUTH_PROVIDER_DEFAULTS[provider];
+            const scriptPath = join(ROOT_DIR, 'tools', 'setup_oauth_provider.sh');
+            if (!existsSync(scriptPath)) { sendSSE({ type: 'error', message: 'tools/setup_oauth_provider.sh missing.' }); return res.end(); }
+
+            sendSSE({ type: 'log', line: `Starting ${provider === 'claude-max' ? 'Claude (Max Subscription)' : 'OpenAI Codex'} setup (model: ${chosenModel})...\nA browser window will open for OAuth — complete the login there.\n` });
+
+            const child = spawn('/bin/bash', [scriptPath, provider, chosenModel], {
+                cwd: ROOT_DIR,
+                env: { ...process.env, OPENCLAUDE_NONINTERACTIVE: '1' },
+                stdio: ['ignore', 'pipe', 'pipe'],
+            });
+            let finished = false;
+            child.stdout.on('data', d => sendSSE({ type: 'log', line: d.toString() }));
+            child.stderr.on('data', d => sendSSE({ type: 'log', line: d.toString() }));
+            child.on('error', (e) => { if (finished) return; finished = true; sendSSE({ type: 'error', message: e.message }); try { res.end(); } catch {} });
+            child.on('close', async (code) => {
+                if (finished) return; finished = true;
+                if (code === 0) {
+                    if (provider === 'claude-max') { try { await ensureClaudeMaxProxy(); } catch (e) { sendSSE({ type: 'log', line: `[warn] proxy auto-start: ${e.message}\n` }); } }
+                    sendSSE({ type: 'done', success: true, config: readConfig() });
+                } else {
+                    sendSSE({ type: 'done', success: false, code });
+                }
+                try { res.end(); } catch {}
+            });
+            // 前端中途關掉連線 → 結束子程序（中斷的 OAuth login 只是要重來而已）
+            res.on('close', () => { if (!finished) { finished = true; try { child.kill(); } catch {} } });
+            return;
+        }
+
         // Models
         if (url.pathname === '/api/models' && req.method === 'GET') {
             const type = url.searchParams.get('type') || 'free';

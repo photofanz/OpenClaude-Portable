@@ -86,7 +86,10 @@ claude_oauth_login() {
     echo -e "  ${DIM}A browser window will open. Log in with your Claude Max account (subscription).${RESET}"
     echo -e "  ${DIM}On Linux credentials go to data/home/.claude/; on macOS they may go to the Keychain.${RESET}"
     echo ""
-    read -p "  Press Enter to start login... " _
+    # 非互動模式（dashboard 透過 server endpoint 跑時）：不要 read stdin
+    if [ "${OPENCLAUDE_NONINTERACTIVE:-0}" != "1" ]; then
+        read -p "  Press Enter to start login... " _
+    fi
     mkdir -p "$DATA_DIR/home"
     CLAUDE_CLI_BIN="$(_resolve_claude_cli_bin)"
     HOME="$DATA_DIR/home" "$CLAUDE_CLI_BIN" auth login --claudeai
@@ -121,17 +124,20 @@ setup_claude_max() {
     fi
 
     # 3) 模型三選一（對齊 portable-claude-proxy server.js resolveModel）
-    echo ""
-    echo -e "  ${CYAN}Choose default model:${RESET}"
-    echo -e "    ${CYAN}1)${RESET} claude-opus-4-7    ${DIM}- strongest (still covered by Max)${RESET}"
-    echo -e "    ${CYAN}2)${RESET} claude-sonnet-4-6  ${DIM}- balanced (recommended)${RESET}"
-    echo -e "    ${CYAN}3)${RESET} claude-haiku-4-5   ${DIM}- fastest${RESET}"
-    read -p "  Select (1-3) [Enter for 2]: " _MSEL
-    case "$_MSEL" in
-        1) CLAUDE_MAX_MODEL="claude-opus-4-7" ;;
-        3) CLAUDE_MAX_MODEL="claude-haiku-4-5" ;;
-        *) CLAUDE_MAX_MODEL="claude-sonnet-4-6" ;;
-    esac
+    #    若 caller 已用環境變數帶入 CLAUDE_MAX_MODEL（dashboard setup endpoint），就跳過選單
+    if [ -z "${CLAUDE_MAX_MODEL:-}" ]; then
+        echo ""
+        echo -e "  ${CYAN}Choose default model:${RESET}"
+        echo -e "    ${CYAN}1)${RESET} claude-opus-4-7    ${DIM}- strongest (still covered by Max)${RESET}"
+        echo -e "    ${CYAN}2)${RESET} claude-sonnet-4-6  ${DIM}- balanced (recommended)${RESET}"
+        echo -e "    ${CYAN}3)${RESET} claude-haiku-4-5   ${DIM}- fastest${RESET}"
+        read -p "  Select (1-3) [Enter for 2]: " _MSEL
+        case "$_MSEL" in
+            1) CLAUDE_MAX_MODEL="claude-opus-4-7" ;;
+            3) CLAUDE_MAX_MODEL="claude-haiku-4-5" ;;
+            *) CLAUDE_MAX_MODEL="claude-sonnet-4-6" ;;
+        esac
+    fi
 
     # 4) 自動產生 proxy token
     local PROXY_TOKEN

@@ -115,8 +115,9 @@ OpenClaude-Multi-Platform/
 │   ├── change_provider.sh     Switch AI provider or API key (Linux/macOS)
 │   ├── Open_Dashboard.bat     Launch web dashboard (Windows)
 │   ├── open_dashboard.sh      Launch web dashboard (Linux/macOS)
-│   ├── _claude_max_lib.sh     Shared Claude Max wizard functions (sourced by start.sh / change_provider.sh)
-│   ├── _codex_lib.sh          Shared OpenAI Codex wizard functions (sourced by start.sh / change_provider.sh)
+│   ├── _claude_max_lib.sh     Shared Claude Max wizard functions (sourced by start.sh / change_provider.sh / setup_oauth_provider.sh)
+│   ├── _codex_lib.sh          Shared OpenAI Codex wizard functions (sourced by start.sh / change_provider.sh / setup_oauth_provider.sh)
+│   ├── setup_oauth_provider.sh Non-interactive Claude Max / Codex OAuth setup (used by the dashboard's setup wizard; also runnable by hand)
 │   ├── preinstall.sh          Pre-fetch claude CLI + codex CLI + proxy deps (no engine launch)
 │   ├── claude-proxy/          Local OpenAI-compatible proxy → Claude Max (git submodule → photofanz/portable-claude-proxy)
 │   └── Setup_Local_Models.bat Wrapper launcher for local model setup
@@ -177,7 +178,7 @@ Then select **LM Studio** in `START.bat`, `start.sh`, or the dashboard setup wiz
 
 ## Claude Max Subscription Mode (macOS / Linux)
 
-Use your existing **Claude Max subscription** ($200/mo) instead of paying per-token API rates. Select option **`10) Claude (Max Subscription)`** in `start.sh` (or `tools/change_provider.sh`).
+Use your existing **Claude Max subscription** ($200/mo) instead of paying per-token API rates. Select option **`10) Claude (Max Subscription)`** in `start.sh` (or `tools/change_provider.sh`), or pick the **Claude (Max)** card in the web dashboard's setup wizard (which runs the same OAuth setup and streams its progress in the browser).
 
 What happens on first setup:
 
@@ -196,7 +197,7 @@ On every launch after that, a local proxy starts on `127.0.0.1:3457` (logged to 
 
 ## OpenAI Codex (ChatGPT Subscription) Mode (macOS / Linux)
 
-Use your ChatGPT subscription (Plus/Pro/Team/Enterprise) to run Codex / GPT-5.x models (`gpt-5.3-codex`, `gpt-5.5`, …) — no API key, **no proxy** (the OpenClaude engine connects to the Codex backend directly). Select option **`11) OpenAI Codex (ChatGPT Subscription)`** in `start.sh` (or `tools/change_provider.sh`).
+Use your ChatGPT subscription (Plus/Pro/Team/Enterprise) to run Codex / GPT-5.x models (`gpt-5.3-codex`, `gpt-5.5`, …) — no API key, **no proxy** (the OpenClaude engine connects to the Codex backend directly). Select option **`11) OpenAI Codex (ChatGPT Subscription)`** in `start.sh` (or `tools/change_provider.sh`), or pick the **OpenAI Codex** card in the web dashboard's setup wizard.
 
 On first setup:
 
