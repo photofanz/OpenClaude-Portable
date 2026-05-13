@@ -754,15 +754,22 @@ async function runAgent(allMessages, cfg, mode, sendSSE) {
         allMessages.unshift({ role: 'system', content: sysContent });
     }
 
-    // Claude Max goes through the bundled proxy, which ignores OpenAI `tools` (it can't return
-    // tool_use for the dashboard to execute). So agent mode there can't call tools — say so once
-    // and run the loop without tools (it'll just answer in one shot, like chat mode).
+    // Claude Max goes through the bundled proxy, which does NOT speak the dashboard's tool-calling
+    // protocol: it ignores the OpenAI `tools` we send and never returns tool_calls for the dashboard
+    // to execute — so the 5 dashboard tools and the Normal-mode approval gate don't apply here. But
+    // the proxy's own Claude Agent SDK has tools enabled (Bash/Read/Write/Edit/WebSearch) and runs
+    // them autonomously inside the proxy process, in the proxy's working directory (tools/claude-proxy/),
+    // returning only the final text. So Claude can still read/write files and run commands — just not
+    // through this UI or with per-action approval. Say so once, then run the loop without dashboard tools.
     const agentToolsEnabled = !isClaudeMaxProxy(cfg);
     if (!agentToolsEnabled) {
         sendSSE({ type: 'agent_reasoning', iteration: 0,
-            content: '⚠️ Agent-mode tool calling is not supported on Claude Max (the local proxy ignores tools). ' +
-                     'This will answer like chat mode. For tool-using agents, use a tool-calling provider: ' +
-                     'OpenAI Codex (ChatGPT subscription), OpenRouter, OpenAI, etc.' });
+            content: 'ℹ️ Claude Max: this dashboard\'s own tools and the Normal-mode approval gate are not used here — ' +
+                     'the bundled local proxy ignores them. Instead, the proxy\'s built-in Claude Agent SDK runs its own ' +
+                     'tools (Bash, Read, Write, Edit, WebSearch) autonomously inside the proxy process, in the proxy\'s ' +
+                     'directory (tools/claude-proxy/), and returns the final answer. So Claude can read/write files and run ' +
+                     'commands — but not through this UI and without per-action approval. For dashboard-visible, gated agent ' +
+                     'tooling, use a tool-calling provider: OpenAI Codex (ChatGPT subscription), OpenRouter, OpenAI, etc.' });
     }
 
     for (let iter = 0; iter < MAX_ITERATIONS; iter++) {
