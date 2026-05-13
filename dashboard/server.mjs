@@ -610,17 +610,14 @@ async function callAI_Codex(messages, cfg, includeTools = true) {
     const bodyObj = buildCodexBody(messages, cfg, { stream: true, includeTools });   // backend requires stream:true
     const body = JSON.stringify(bodyObj);
     const headers = { ...codexHeaders(auth), 'Content-Length': String(Buffer.byteLength(body)) };
-    console.log(`[codex] POST (stream) model=${bodyObj.model} inputItems=${bodyObj.input.length} tools=${bodyObj.tools ? bodyObj.tools.length : 0} acct=${auth.accountId ? 'y' : 'n'} tokLen=${(auth.accessToken || '').length}`);
 
-    let text = '', accText = '', errMsg = null, sawCompleted = false;
+    let text = '', accText = '', errMsg = null;
     const toolCalls = [];
     const fcArgs = {};   // output_index → accumulated arguments string (from function_call_arguments.delta)
-    const evtTypes = {};
     let buf = '';
     const handleEvent = (raw) => {
         let ev; try { ev = JSON.parse(raw); } catch { return; }
         const t = ev.type || ev.event;
-        evtTypes[t] = (evtTypes[t] || 0) + 1;
         if (t === 'response.output_text.delta' && typeof ev.delta === 'string') accText += ev.delta;
         else if (t === 'response.function_call_arguments.delta' && typeof ev.delta === 'string') fcArgs[ev.output_index] = (fcArgs[ev.output_index] || '') + ev.delta;
         else if (t === 'response.function_call_arguments.done' && typeof ev.arguments === 'string') fcArgs[ev.output_index] = ev.arguments;
@@ -634,7 +631,6 @@ async function callAI_Codex(messages, cfg, includeTools = true) {
                 for (const part of it.content) if (part.type === 'output_text' && part.text) text += part.text;
             }
         }
-        else if (t === 'response.completed') sawCompleted = true;
         else if (t === 'response.failed' || t === 'error' || t === 'response.error') errMsg = ev.response?.error?.message || ev.error?.message || ev.message || JSON.stringify(ev).slice(0, 300);
     };
     await streamExternal(CODEX_RESPONSES_URL, headers, body,
@@ -658,7 +654,6 @@ async function callAI_Codex(messages, cfg, includeTools = true) {
         },
         () => {
             if (buf.startsWith('data:')) { const raw = buf.slice(5).trim(); if (raw && raw !== '[DONE]') handleEvent(raw); }
-            console.log(`[codex] stream done; events=${JSON.stringify(evtTypes)}; toolCalls=${toolCalls.length}; text=${text.length || accText.length}c; completed=${sawCompleted}; err=${errMsg || '-'}`);
         }
     );
     if (errMsg) throw new Error('Codex API error: ' + errMsg);
@@ -864,8 +859,6 @@ async function streamChatResponse(messages, cfg, res) {
             const bodyObj = buildCodexBody(messages, cfg, { stream: true });   // chat mode → no tools
             const body = JSON.stringify(bodyObj);
             const headers = { ...codexHeaders(auth), 'Content-Length': String(Buffer.byteLength(body)) };
-            console.log(`[codex/stream] POST model=${bodyObj.model} inputItems=${bodyObj.input.length} acct=${auth.accountId ? 'y' : 'n'}`);
-            const _evtTypes = {};
             await streamExternal(CODEX_RESPONSES_URL, headers, body,
                 (chunk) => {
                     chunk.split('\n').forEach(line => {
@@ -875,18 +868,16 @@ async function streamChatResponse(messages, cfg, res) {
                         try {
                             const ev = JSON.parse(raw);
                             const t = ev.type || ev.event;
-                            _evtTypes[t] = (_evtTypes[t] || 0) + 1;
                             if (t === 'response.output_text.delta' && ev.delta) {
                                 fullText += ev.delta; sendSSE({ type: 'delta', content: ev.delta });
                             } else if (t === 'response.failed' || t === 'error' || t === 'response.error') {
                                 const msg = ev.response?.error?.message || ev.error?.message || ev.message || JSON.stringify(ev).slice(0, 300);
-                                console.log(`[codex/stream] failure event: ${msg}`);
                                 sendSSE({ type: 'error', content: 'Codex: ' + msg });
                             }
                         } catch {}
                     });
                 },
-                () => { console.log(`[codex/stream] done; fullText=${fullText.length}c; events=${JSON.stringify(_evtTypes)}`); sendSSE({ type: 'done', fullText }); res.end(); }
+                () => { sendSSE({ type: 'done', fullText }); res.end(); }
             );
         } catch (e) {
             sendSSE({ type: 'error', content: `Codex error: ${e.message}` });
