@@ -128,12 +128,12 @@ setup_claude_max() {
     if [ -z "${CLAUDE_MAX_MODEL:-}" ]; then
         echo ""
         echo -e "  ${CYAN}Choose default model:${RESET}"
-        echo -e "    ${CYAN}1)${RESET} claude-opus-4-7    ${DIM}- strongest (still covered by Max)${RESET}"
+        echo -e "    ${CYAN}1)${RESET} claude-opus-4-8    ${DIM}- strongest (still covered by Max)${RESET}"
         echo -e "    ${CYAN}2)${RESET} claude-sonnet-4-6  ${DIM}- balanced (recommended)${RESET}"
         echo -e "    ${CYAN}3)${RESET} claude-haiku-4-5   ${DIM}- fastest${RESET}"
         read -p "  Select (1-3) [Enter for 2]: " _MSEL
         case "$_MSEL" in
-            1) CLAUDE_MAX_MODEL="claude-opus-4-7" ;;
+            1) CLAUDE_MAX_MODEL="claude-opus-4-8" ;;
             3) CLAUDE_MAX_MODEL="claude-haiku-4-5" ;;
             *) CLAUDE_MAX_MODEL="claude-sonnet-4-6" ;;
         esac

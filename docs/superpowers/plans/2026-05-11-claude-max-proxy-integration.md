@@ -399,12 +399,12 @@ setup_claude_max() {
     # 3) 模型三選一（對齊 portable-claude-proxy server.js resolveModel）
     echo ""
     echo -e "  ${CYAN}Choose default model:${RESET}"
-    echo -e "    ${CYAN}1)${RESET} claude-opus-4-7    ${DIM}- strongest (still covered by Max)${RESET}"
+    echo -e "    ${CYAN}1)${RESET} claude-opus-4-8    ${DIM}- strongest (still covered by Max)${RESET}"
     echo -e "    ${CYAN}2)${RESET} claude-sonnet-4-6  ${DIM}- balanced (recommended)${RESET}"
     echo -e "    ${CYAN}3)${RESET} claude-haiku-4-5   ${DIM}- fastest${RESET}"
     read -p "  Select (1-3) [Enter for 2]: " _MSEL
     case "$_MSEL" in
-        1) CLAUDE_MAX_MODEL="claude-opus-4-7" ;;
+        1) CLAUDE_MAX_MODEL="claude-opus-4-8" ;;
         3) CLAUDE_MAX_MODEL="claude-haiku-4-5" ;;
         *) CLAUDE_MAX_MODEL="claude-sonnet-4-6" ;;
     esac
@@ -990,7 +990,7 @@ What happens on first setup:
 
 1. Downloads the `claude` CLI and the bundled proxy's dependencies (~30–50 MB, one time).
 2. Opens a browser for **OAuth login** with your Claude Max account. Credentials are stored **inside the project** at `data/home/.claude/` — nothing touches your real home directory.
-3. You pick a default model: `claude-opus-4-7`, `claude-sonnet-4-6` (recommended), or `claude-haiku-4-5`.
+3. You pick a default model: `claude-opus-4-8`, `claude-sonnet-4-6` (recommended), or `claude-haiku-4-5`.
 4. A random local-only API key is generated and wired up automatically — you never type an API key.
 
 On every launch after that, a local proxy starts on `127.0.0.1:3456` (logged to `data/claude-proxy.log`) and stops when the engine exits.
@@ -1066,7 +1066,7 @@ CLAUDE_CODE_USE_OPENAI=1
 OPENAI_BASE_URL=http://127.0.0.1:3456/v1
 OPENAI_API_FORMAT=chat_completions
 OPENAI_API_KEY=sk-portable-<random>     # 等同 tools/claude-proxy/.env 的 API_KEY
-OPENAI_MODEL=claude-sonnet-4-6          # 或 opus-4-7 / haiku-4-5
+OPENAI_MODEL=claude-sonnet-4-6          # 或 opus-4-8 / haiku-4-5
 AI_DISPLAY_MODEL=claude-sonnet-4-6
 CLAUDE_PROXY_MODE=1                     # start.sh 與 dashboard 判斷旗標
 ```
@@ -1117,7 +1117,7 @@ git submodule update --init tools/claude-proxy   # 若需要
 ./start.sh                                       # 選 10 → 走 wizard → 選 1 launch → 對話 → 退出
 ```
 核對 spec「驗收條件」1-8 逐條：
-1. `./start.sh` → `10)` → wizard → launch → 能跟 opus-4-7 / sonnet-4-6 / haiku-4-5 對話 ✓
+1. `./start.sh` → `10)` → wizard → launch → 能跟 opus-4-8 / sonnet-4-6 / haiku-4-5 對話 ✓
 2. `data/claude-proxy.log` 有請求記錄且 forward 成功 ✓
 3. `Ctrl+C` 後無殘留 proxy PID（`lsof -nP -iTCP:3456 -sTCP:LISTEN` 空）✓
 4. `bash tools/open_dashboard.sh` 後 dashboard chat 能跟 Claude Max 對話（self-heal 起 proxy）✓
