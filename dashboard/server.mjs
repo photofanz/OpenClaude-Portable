@@ -866,25 +866,33 @@ async function streamChatResponse(messages, cfg, res) {
             const bodyObj = buildCodexBody(messages, cfg, { stream: true });   // chat mode → no tools
             const body = JSON.stringify(bodyObj);
             const headers = { ...codexHeaders(auth), 'Content-Length': String(Buffer.byteLength(body)) };
+            let buf = '';
+            const handleChatEvent = (raw) => {
+                let ev; try { ev = JSON.parse(raw); } catch { return; }
+                const t = ev.type || ev.event;
+                if (t === 'response.output_text.delta' && ev.delta) {
+                    fullText += ev.delta; sendSSE({ type: 'delta', content: ev.delta });
+                } else if (t === 'response.failed' || t === 'error' || t === 'response.error') {
+                    const msg = ev.response?.error?.message || ev.error?.message || ev.message || JSON.stringify(ev).slice(0, 300);
+                    sendSSE({ type: 'error', content: 'Codex: ' + msg });
+                }
+            };
             await streamExternal(CODEX_RESPONSES_URL, headers, body,
                 (chunk) => {
-                    chunk.split('\n').forEach(line => {
-                        if (!line.startsWith('data:')) return;
+                    buf += String(chunk);
+                    const lines = buf.split('\n');
+                    buf = lines.pop();   // keep the last (possibly incomplete) line across chunks
+                    for (const line of lines) {
+                        if (!line.startsWith('data:')) continue;
                         const raw = line.slice(5).trim();
-                        if (!raw || raw === '[DONE]') return;
-                        try {
-                            const ev = JSON.parse(raw);
-                            const t = ev.type || ev.event;
-                            if (t === 'response.output_text.delta' && ev.delta) {
-                                fullText += ev.delta; sendSSE({ type: 'delta', content: ev.delta });
-                            } else if (t === 'response.failed' || t === 'error' || t === 'response.error') {
-                                const msg = ev.response?.error?.message || ev.error?.message || ev.message || JSON.stringify(ev).slice(0, 300);
-                                sendSSE({ type: 'error', content: 'Codex: ' + msg });
-                            }
-                        } catch {}
-                    });
+                        if (!raw || raw === '[DONE]') continue;
+                        handleChatEvent(raw);
+                    }
                 },
-                () => { sendSSE({ type: 'done', fullText }); res.end(); }
+                () => {
+                    if (buf.startsWith('data:')) { const raw = buf.slice(5).trim(); if (raw && raw !== '[DONE]') handleChatEvent(raw); }
+                    sendSSE({ type: 'done', fullText }); res.end();
+                }
             );
         } catch (e) {
             sendSSE({ type: 'error', content: `Codex error: ${e.message}` });

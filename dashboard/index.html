@@ -497,7 +497,7 @@ select{appearance:none;cursor:pointer;background-image:url("data:image/svg+xml,%
             </div>
             <div id="manualModelWrap" style="display:none"><div class="form-row"><label>Model Name</label><input type="text" id="manualModel" placeholder="Enter model name"></div></div>
             <div id="modelLoading" style="display:none;margin:16px 0;align-items:center;gap:8px;font-size:0.8rem;color:var(--text2)"><div class="spinner"></div> Fetching models...</div>
-            <div class="btn-group"><button class="btn btn-outline" onclick="goStep(2)">Back</button><button class="btn btn-primary" onclick="goStep(4)">Continue</button></div>
+            <div class="btn-group"><button class="btn btn-outline" onclick="modelBack()">Back</button><button class="btn btn-primary" onclick="goStep(4)">Continue</button></div>
           </div>
         </div>
 
@@ -1354,6 +1354,12 @@ function goStep(n) {
   if(n===2)prepareKeyStep();
   if(n===3)initModelStep();
   if(n===4)initConfirmStep();
+}
+
+// skip-step provider（ollama / OAuth 訂閱）沒有 key 步驟，所以 Model 步的 Back 要回到 provider 選擇(step1)；
+// 否則 goStep(2) 會被上面的 skip 規則彈回 step3，Back 就變成死鍵。
+function modelBack(){
+  goStep((setupState.provider==='ollama'||isOAuthSubProvider(setupState.provider))?1:2);
 }
 
 async function verifyKey() {
