@@ -394,8 +394,8 @@ for /f "delims=" %%I in ('powershell -NoProfile -Command "$d = (Invoke-RestMetho
 )
 if "!idx!"=="1" (
     echo   !YELLOW![API Error] Could not fetch models, using fallback...!RESET!
-    set "PAID_MODEL_1=anthropic/claude-3.5-sonnet"
-    echo   !CYAN!1^)!RESET! anthropic/claude-3.5-sonnet
+    set "PAID_MODEL_1=anthropic/claude-sonnet-4.5"
+    echo   !CYAN!1^)!RESET! anthropic/claude-sonnet-4.5
     set /a "idx=2"
 )
 set "PAID_MAX=!idx!"
@@ -671,8 +671,8 @@ if errorlevel 1 (
 )
 echo   !GREEN![OK] Key Verified!!RESET!
 echo.
-set /p "USER_MODEL=  Enter Model !DIM!(Enter for claude-3-7-sonnet-20250219)!RESET!: "
-if "%USER_MODEL%"=="" set "USER_MODEL=claude-3-7-sonnet-20250219"
+set /p "USER_MODEL=  Enter Model !DIM!(Enter for claude-sonnet-5)!RESET!: "
+if "%USER_MODEL%"=="" set "USER_MODEL=claude-sonnet-5"
 (
     echo AI_PROVIDER=anthropic
     echo ANTHROPIC_API_KEY=%USER_API_KEY%

@@ -78,8 +78,8 @@ CLAUDE_CODE_USE_OPENAI=1
 OPENAI_BASE_URL=http://127.0.0.1:3457/v1
 OPENAI_API_FORMAT=chat_completions
 OPENAI_API_KEY=sk-portable-<random>     # 等同 tools/claude-proxy/.env 的 API_KEY（wizard 一次產生寫兩處）
-OPENAI_MODEL=claude-sonnet-4-6          # 或 opus-4-8 / haiku-4-5
-AI_DISPLAY_MODEL=claude-sonnet-4-6
+OPENAI_MODEL=claude-sonnet-5            # 或 opus-4-8 / haiku-4-5
+AI_DISPLAY_MODEL=claude-sonnet-5
 CLAUDE_PROXY_MODE=1                     # start.sh 與 dashboard 判斷旗標
 ```
 

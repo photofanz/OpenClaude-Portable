@@ -616,13 +616,13 @@ let currentMode = 'normal';
 let modeLocked = false;
 let agentMode = false;
 let workDir = '';
-const defaults = { gemini:'gemini-2.0-pro-exp-02-05', anthropic:'claude-3-7-sonnet-20250219', ollama:'llama3.2:3b', openai:'gpt-4o', nvidia:'meta/llama-3.1-70b-instruct', deepseek:'deepseek-v4-flash', lmstudio:'', 'custom-openai':'', 'claude-max':'claude-sonnet-4-6', codex:'gpt-5.3-codex' };
+const defaults = { gemini:'gemini-2.0-pro-exp-02-05', anthropic:'claude-sonnet-5', ollama:'llama3.2:3b', openai:'gpt-4o', nvidia:'meta/llama-3.1-70b-instruct', deepseek:'deepseek-v4-flash', lmstudio:'', 'custom-openai':'', 'claude-max':'claude-sonnet-5', codex:'gpt-5.3-codex' };
 const providerNames = { openrouter:'OpenRouter', gemini:'Gemini', anthropic:'Claude', ollama:'Ollama', openai:'OpenAI', nvidia:'NVIDIA NIM', deepseek:'DeepSeek', lmstudio:'LM Studio', 'custom-openai':'Custom OpenAI-Compatible', 'claude-max':'Claude (Max Subscription)', codex:'OpenAI Codex (ChatGPT)' };
 // 走 OAuth 訂閱登入、不需要 API key、saveConfig 時改跑 /api/setup/oauth-provider 的 provider
 const OAUTH_SUB_PROVIDERS = ['claude-max','codex'];
 const isOAuthSubProvider = (p) => OAUTH_SUB_PROVIDERS.includes(p);
 const OAUTH_SUB_MODELS = {
-  'claude-max': ['claude-opus-4-8','claude-sonnet-4-6','claude-haiku-4-5'],
+  'claude-max': ['claude-opus-4-8','claude-sonnet-5','claude-haiku-4-5'],
   codex: ['gpt-5.3-codex','gpt-5.3-codex-spark','gpt-5.5','gpt-5.4','gpt-5.2-codex','gpt-5.1-codex-max','gpt-5.1-codex-mini','gpt-5.5-mini'],
 };
 

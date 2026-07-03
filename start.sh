@@ -467,8 +467,8 @@ setup_claude() {
     fi
     echo -e "  ${GREEN}[OK] Key Verified!${RESET}"
     echo ""
-    read -p "  Enter Model (Enter for claude-3-7-sonnet-20250219): " USER_MODEL
-    [ -z "$USER_MODEL" ] && USER_MODEL="claude-3-7-sonnet-20250219"
+    read -p "  Enter Model (Enter for claude-sonnet-5): " USER_MODEL
+    [ -z "$USER_MODEL" ] && USER_MODEL="claude-sonnet-5"
     save_env "AI_PROVIDER=anthropic
 ANTHROPIC_API_KEY=${USER_API_KEY}
 AI_DISPLAY_MODEL=${USER_MODEL}"

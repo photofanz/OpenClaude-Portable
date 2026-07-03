@@ -404,7 +404,7 @@ async function callAI_OpenAI(messages, cfg, includeTools = true) {
 }
 
 async function callAI_Anthropic(messages, cfg, includeTools = true) {
-    const model = cfg.AI_DISPLAY_MODEL || 'claude-3-5-sonnet-20241022';
+    const model = cfg.AI_DISPLAY_MODEL || 'claude-sonnet-5';
     const apiKey = cfg.ANTHROPIC_API_KEY;
     // Extract system from messages
     let system = '';
@@ -930,7 +930,7 @@ async function streamChatResponse(messages, cfg, res) {
 
     // ── Anthropic ─────────────────────────────────────────────
     if (provider === 'anthropic') {
-        const body = JSON.stringify({ model: model || 'claude-3-5-sonnet-20241022', messages, max_tokens: 4096, stream: true });
+        const body = JSON.stringify({ model: model || 'claude-sonnet-5', messages, max_tokens: 4096, stream: true });
         const headers = { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Length': Buffer.byteLength(body) };
         let fullText = '';
         await streamExternal('https://api.anthropic.com/v1/messages', headers, body,
@@ -1020,7 +1020,7 @@ const server = createServer(async (req, res) => {
             if (IS_WIN) { sendSSE({ type: 'error', message: 'OAuth subscription providers (Claude Max / OpenAI Codex) are macOS/Linux only.' }); return res.end(); }
             if (provider !== 'claude-max' && provider !== 'codex') { sendSSE({ type: 'error', message: `Unknown OAuth provider: ${provider}` }); return res.end(); }
 
-            const OAUTH_PROVIDER_DEFAULTS = { 'claude-max': 'claude-sonnet-4-6', 'codex': 'gpt-5.3-codex' };
+            const OAUTH_PROVIDER_DEFAULTS = { 'claude-max': 'claude-sonnet-5', 'codex': 'gpt-5.3-codex' };
             const chosenModel = (model && String(model).trim()) || OAUTH_PROVIDER_DEFAULTS[provider];
             const scriptPath = join(ROOT_DIR, 'tools', 'setup_oauth_provider.sh');
             if (!existsSync(scriptPath)) { sendSSE({ type: 'error', message: 'tools/setup_oauth_provider.sh missing.' }); return res.end(); }

@@ -184,7 +184,7 @@ What happens on first setup:
 
 1. Downloads the `claude` CLI and the bundled proxy's dependencies (~30–50 MB, one time).
 2. Opens a browser for **OAuth login** with your Claude Max account. Credentials are stored **inside the project** at `data/home/.claude/` — nothing touches your real home directory.
-3. You pick a default model: `claude-opus-4-8`, `claude-sonnet-4-6` (recommended), or `claude-haiku-4-5`.
+3. You pick a default model: `claude-opus-4-8`, `claude-sonnet-5` (recommended), or `claude-haiku-4-5`.
 4. A random local-only API key is generated and wired up automatically — you never type an API key.
 
 On every launch after that, a local proxy starts on `127.0.0.1:3457` (logged to `data/claude-proxy.log`) and stops when the engine exits. The proxy is a git submodule at `tools/claude-proxy/` pointing at [`photofanz/portable-claude-proxy`](https://github.com/photofanz/portable-claude-proxy) (derived from [`photofanz/hermes-claude-proxy-v5`](https://github.com/photofanz/hermes-claude-proxy-v5)).
